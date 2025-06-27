@@ -2,6 +2,8 @@
 
 Collection of common scripts and tooling to be used by AKS Ingress competitive testing.
 
+Note that this repo assumes that kubectl is already installed.
+
 ## Repository Structure
 
 This repository is a collection of modules that follow consistent patterns to create a common framework for Ingress competitive testing.
