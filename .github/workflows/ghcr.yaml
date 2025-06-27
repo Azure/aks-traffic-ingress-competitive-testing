@@ -4,9 +4,12 @@ on:
   workflow_dispatch:
 
 jobs:
-    push:
-        name: Push to GHCR
+    build-and-push:
+        name: Build and Push to GHCR
         runs-on: ubuntu-latest
+        permissions:
+          contents: read
+          packages: write
         steps:
           - name: Checkout code
             uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -19,7 +22,7 @@ jobs:
             with:
               registry: ghcr.io
               username: ${{ github.actor }}
-              token: ${{ secrets.GITHUB_TOKEN }}
+              password: ${{ secrets.GITHUB_TOKEN }}
 
             # need to lowercase repository because ghcr requires reference in lowercase
           - name: Get repository name
