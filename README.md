@@ -23,3 +23,5 @@ All modules expect to be run from the root directory of this project.
 [/server](./server/) contains the files required to run a web server and containerize it.
 
 GitHub Container Registry is our container registry. To trigger a build go to the GitHub repository then click `Actions` -> `Build and Push to GHCR` -> `Run workflow` -> ensure you're using workflow from main then click `Run workflow`
+
+Note that since this is a private repository, we'll need to use a [pull secret for interacting with Kubernetes](https://stackoverflow.com/questions/72959144/k8s-to-pull-private-image-from-github-container-registry-ghcr-using-github-tok).
