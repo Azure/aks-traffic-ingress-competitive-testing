@@ -16,8 +16,32 @@ function create_kind_cluster() {
         echo "Existing cluster deleted."
     fi
 
-    # Create a basic cluster 
-    kind create cluster --name "${cluster_name}" 
+    # Create cluster with port mappings for ingress
+    cat <<EOF | kind create cluster --name "${cluster_name}" --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 80
+    hostPort: 8080
+    protocol: TCP
+  - containerPort: 443
+    hostPort: 8443
+    protocol: TCP
+EOF
+
+    # Install ingress-nginx
+    kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml --context "kind-${cluster_name}"
+
+    # Wait for ingress-nginx to be ready
+    echo "Waiting for ingress-nginx to be ready..."
+    kubectl wait --namespace ingress-nginx \
+        --for=condition=ready pod \
+        --selector=app.kubernetes.io/component=controller \
+        --timeout=90s \
+        --context "kind-${cluster_name}"
+
     echo "Cluster ${cluster_name} is ready!"
 }
 
@@ -32,7 +56,7 @@ function set_kubectl_context() {
     fi
 
     # Set kubectl context to the KIND cluster
-    kubectl cluster-info --context "kind-${cluster_name}"
+    kubectl config set-context "kind-${cluster_name}"
     echo "kubectl context set to ${cluster_name}"
     
     # Verify the current context
