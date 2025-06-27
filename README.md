@@ -17,3 +17,7 @@ This repository is a collection of modules that follow consistent patterns to cr
 - /collect collects the output of the run into a standardized json file
 
 All modules expect to be run from the root directory of this project.
+
+### /server
+
+[/server](./server/) contains the files required to run a web server and containerize it.
