@@ -21,3 +21,5 @@ All modules expect to be run from the root directory of this project.
 ### /server
 
 [/server](./server/) contains the files required to run a web server and containerize it.
+
+GitHub Container Registry is our container registry. To trigger a build go to the GitHub repository then click `Actions` -> `Build and Push to GHCR` -> `Run workflow` -> ensure you're using workflow from main then click `Run workflow`
