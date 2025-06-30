@@ -2,7 +2,38 @@
 
 Collection of common scripts and tooling to be used by AKS Ingress competitive testing.
 
-Note that this repo assumes that [[kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), and [jq](https://jqlang.org/download/) are already installed.
+Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), and [jq](https://jqlang.org/download/) are already installed.
+
+## Verifying locally
+
+We verify that scripts work locally before making changes and also add automated testing to ensure scripts work.
+
+For example, to ensure that the simple RPS is working locally we can use the following commands
+
+```bash
+echo "Installing dependencies"
+chmod +x ./modules/kind/install/install.sh
+chmod +x ./modules/vegeta/install/install.sh
+./modules/kind/install/install.sh
+./modules/vegeta/install/install.sh
+
+echo "Creating Kind cluster"
+chmod +x ./modules/kind/run/run.sh
+./modules/kind/run/run.sh
+
+echo "Get outputs from cluster"
+chmod +x ./modules/kind/output/output.sh
+INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
+INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
+
+echo "Applying manifests"
+helm install server ./charts/server \
+    --namespace server \
+    --create-namespace \
+    --set ingress.enabled=true \
+    --set ingress.className=$INGRESS_CLASS \
+    --wait
+```
 
 ## Repository Structure
 
