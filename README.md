@@ -27,10 +27,12 @@ INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
 INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
 echo "Applying manifests"
-helm install release ./charts/server \
+helm install server ./charts/server \
     --namespace server \
+    --create-namespace \
     --set ingress.enabled=true \
-    --set ingress.className=$INGRESS_CLASS
+    --set ingress.className=$INGRESS_CLASS \
+    --wait
 ```
 
 ## Repository Structure
