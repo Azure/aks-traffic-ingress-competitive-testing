@@ -18,9 +18,9 @@ This repository is a collection of modules that follow consistent patterns to cr
 - README.md in each module contains information on how the module works and what it accomplishes
 - /install contains a `install.sh` script that installs the required tool
 - /run contains scripts that run the tool. These can be functions and modules can contain many different functions for running
-- /collect collects the output of the run into a standardized json file
+- /output collects the output of the run into a standardized json file
 
-All modules expect to be run from the root directory of this project.
+Note: all modules expect to be **run from the root directory of this project**.
 
 ### /server
 
