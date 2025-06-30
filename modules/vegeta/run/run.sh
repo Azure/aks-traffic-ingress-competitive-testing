@@ -5,6 +5,9 @@
 
 set -e
 
+filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
+statefile="${filepath}/../statefile.json"
+
 function run_vegeta_attack() {
     local target_url="${1}"
     if [ -z "$target_url" ]; then
@@ -29,7 +32,13 @@ function run_vegeta_attack() {
         -rate=$rate \
         -duration=$duration \
         -workers=$workers | \
-    vegeta encode
+    vegeta encode |\
+    jaggr @count=rps \
+      hist\[100,200,300,400,500\]:code \
+      p25,p50,p99:latency \
+      sum:bytes_in \
+      sum:bytes_out |\
+    tee $statefile
 }
 
 # If script is run directly (not sourced)
