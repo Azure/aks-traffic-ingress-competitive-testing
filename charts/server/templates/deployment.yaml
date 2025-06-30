@@ -12,13 +12,12 @@ spec:
   strategy:
     {{- if .Values.strategy }}
     {{- toYaml .Values.strategy | nindent 4 }}
-    {{- else }}
+    {{- end }}
   template:
     metadata:
       labels:
         {{- include "server.labels" . | nindent 8 }}
     spec:
-      {{- with .Values.imagePullSecrets }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
