@@ -2,11 +2,15 @@
 
 Collection of common scripts and tooling to be used by AKS Ingress competitive testing.
 
-Note that this repo assumes that kubectl is already installed.
+Note that this repo assumes that [[kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) and [helm](https://helm.sh/docs/intro/install/) are already installed.
 
 ## Repository Structure
 
 This repository is a collection of modules that follow consistent patterns to create a common framework for Ingress competitive testing.
+
+### /charts
+
+[/charts](./charts/) contains the Helm charts to install Kubernetes resources.
 
 ### /modules
 
