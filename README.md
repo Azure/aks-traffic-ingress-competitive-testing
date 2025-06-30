@@ -37,6 +37,8 @@ helm install server ./charts/server \
 echo "Running RPS test"
 chmod +x ./modules/vegeta/run/run.sh
 ./modules/vegeta/run/run.sh http://localhost:8080 50 30s 10
+chmod +x ./modules/vegeta/output/output.sh
+./modules/vegeta/output/output.sh
 ```
 
 ## Repository Structure
