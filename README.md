@@ -33,6 +33,10 @@ helm install server ./charts/server \
     --set ingress.enabled=true \
     --set ingress.className=$INGRESS_CLASS \
     --wait
+
+echo "Running RPS test"
+chmod +x ./modules/vegeta/run/run.sh
+./modules/vegeta/run/run.sh http://localhost:8080 50 30s 10
 ```
 
 ## Repository Structure
