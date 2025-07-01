@@ -2,7 +2,7 @@
 
 Collection of common scripts and tooling to be used by AKS Ingress competitive testing.
 
-Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), Python3, and [jq](https://jqlang.org/download/) are already installed.
+Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), Python3, Go and [jq](https://jqlang.org/download/) are already installed.
 
 ## Verifying locally
 
@@ -44,7 +44,7 @@ This repository is a collection of modules that follow consistent patterns to cr
 [/modules](./modules/) contains groupings of tools each with the following sub directories and files
 - README.md in each module contains information on how the module works and what it accomplishes
 - /install contains a `install.sh` script that installs the required tool
-- /run contains scripts that run the tool. These can be functions and modules can contain many different functions for running
+- /run contains `run.sh` that run the tool. These can be functions and modules can contain many different functions for running
 - /output collects the output of the run into a standardized json file
 - /test contains a `test.sh` script that tests and validates the module is working correctly
 
