@@ -38,7 +38,7 @@ EOF
     # Wait for ingress-nginx to be ready
     echo "Waiting for ingress-nginx to be ready..."
     # Sleep to allow the ingress controller pods to be created
-    sleep 5s
+    sleep 10s
     kubectl wait --namespace ingress-nginx \
         --for=condition=ready pod \
         --selector=app.kubernetes.io/component=controller \
