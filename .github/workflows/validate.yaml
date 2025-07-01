@@ -159,3 +159,49 @@ jobs:
             echo "✓ Module $module structure validated"
           done
           
+  test-charts:
+    name: Validate Charts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          # Install Helm
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Setup Kind cluster
+        run: |
+          echo "Installing Kind"
+          chmod +x ./modules/kind/install/install.sh
+          ./modules/kind/install/install.sh
+
+          echo "Creating Kind cluster"
+          chmod +x ./modules/kind/run/run.sh
+          ./modules/kind/run/run.sh
+
+      - name: Validate charts
+        run: |
+          echo "Validating charts"
+          
+          # Find all directories in modules/
+          echo "Discovering charts in charts/ directory..."
+
+          # Check that all charts have required directories and files
+          for chart in $(find charts -maxdepth 1 -type d -not -name charts | sed 's|charts/||'); do
+            echo "Checking chart: $chart"
+
+            helm upgrade --install server ./charts/$chart \
+            --namespace $chart \
+            --create-namespace \
+            --wait
+
+            helm test $chart --namespace $chart || {
+              echo "ERROR: Helm test failed for chart $chart"
+              exit 1
+            }
+
+
+            echo "✓ Chart $chart validated"
+          done
