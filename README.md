@@ -11,11 +11,9 @@ We verify that scripts work locally before making changes and also add automated
 For example, to ensure that the simple RPS is working locally we can use the following commands
 
 ```bash
-echo "Installing dependencies"
+echo "Installing cluster dependencies"
 chmod +x ./modules/kind/install/install.sh
-chmod +x ./modules/vegeta/install/install.sh
-./modules/kind/install/install.sh
-./modules/vegeta/install/install.sh
+chmod +x ./modules/jplot/install/install.sh
 
 echo "Creating Kind cluster"
 chmod +x ./modules/kind/run/run.sh
@@ -26,17 +24,7 @@ chmod +x ./modules/kind/output/output.sh
 INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
 INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
-echo "Applying manifests"
-helm install server ./charts/server \
-    --namespace server \
-    --create-namespace \
-    --set ingress.enabled=true \
-    --set ingress.className=$INGRESS_CLASS \
-    --wait
-
-echo "Running RPS test"
-chmod +x ./modules/vegeta/run/run.sh
-./modules/vegeta/run/run.sh http://localhost:8080 50 30s 10
+./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL
 
 chmod +x ./modules/vegeta/output/output.sh
 chmod +x ./modules/jplot/run/run.sh
@@ -64,6 +52,10 @@ Note: all modules expect to be **run from the root directory of this project**.
 ### /server
 
 [/server](./server/) contains the files required to run a web server and containerize it. Learn more [here](./server/README.md).
+
+### /scenarios
+
+[/scenarios](./scenarios/) contains files that run tests. These scenarios assume that a Kubernetes cluster is set in the kubectl context. Their output is JSON so that consumers can decide on the final display format themselves.
 
 ## Notice
 
