@@ -2,15 +2,19 @@
 
 set -e
 
-function plot_vegeta() {
-    local input_file="$1"
-    local output_file="$2"
-
-    if [[ ! -f "$input_file" ]]; then
-        echo "Input file not found: $input_file"
-        exit 1
-    fi
-
-    echo "Plotting vegeta results from $input_file to $output_file..."
-    jplot -f "$input_file" -o "$output_file"
+function vegeta() {
+    echo "Plotting vegeta results..."
+    jplot rps+code.hist.100+code.hist.200+code.hist.300+code.hist.400+code.hist.500 \
+      latency.p99+latency.p50+latency.p25 \
+      bytes_in.sum+bytes_out.sum
 }
+
+if declare -f "$1" > /dev/null
+then
+  # call arguments verbatim
+  "$@"
+else
+  # Show a helpful error
+  echo "'$1' is not a known function name" >&2
+  exit 1
+fi
