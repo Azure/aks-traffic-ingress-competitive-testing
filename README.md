@@ -46,6 +46,7 @@ This repository is a collection of modules that follow consistent patterns to cr
 - /install contains a `install.sh` script that installs the required tool
 - /run contains scripts that run the tool. These can be functions and modules can contain many different functions for running
 - /output collects the output of the run into a standardized json file
+- /test contains a `test.sh` script that tests and validates the module is working correctly
 
 Note: all modules expect to be **run from the root directory of this project**.
 
