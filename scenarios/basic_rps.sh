@@ -18,6 +18,10 @@ echo "Starting basic RPS test with:"
 echo "  Ingress Class: $INGRESS_CLASS"
 echo "  Ingress URL: $INGRESS_URL"
 
+echo "Install depencencies..."
+chmod +x ./modules/vegeta/install/install.sh
+./modules/vegeta/install/install.sh
+
 echo "Applying manifests..."
 helm upgrade --install server ./charts/server \
     --namespace server \
