@@ -1,0 +1,190 @@
+name: Validate Modules
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-kind:
+    name: Test KIND Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Install Docker (for KIND)
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+          sudo systemctl start docker
+          sudo usermod -aG docker $USER
+
+          # Install jq for JSON parsing
+          sudo apt-get install -y jq
+
+      - name: Run KIND module tests
+        run: |
+          cd modules/kind/test
+          chmod +x test.sh
+          ./test.sh
+
+  test-vegeta:
+    name: Test Vegeta Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          # Install curl, wget, and jq
+          sudo apt-get update
+          sudo apt-get install -y curl wget jq python3
+
+      - name: Run Vegeta module tests
+        run: |
+          cd modules/vegeta/test
+          chmod +x test.sh
+          ./test.sh
+
+  test-jplot:
+    name: Test jplot Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: |
+          # Install jq for JSON parsing
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Run jplot module tests
+        run: |
+          cd modules/jplot/test
+          chmod +x test.sh
+          ./test.sh
+
+  test-scenarios:
+    name: Test Scenarios
+    runs-on: ubuntu-latest
+    needs: [test-kind, test-vegeta, test-jplot]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          # Install Helm
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+          # Install Docker (for KIND)
+          sudo apt-get update
+          sudo apt-get install -y docker.io
+          sudo systemctl start docker
+          sudo usermod -aG docker $USER
+
+          # Install jq for JSON parsing
+          sudo apt-get install -y jq
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Test basic RPS scenario syntax
+        run: |
+          # Basic syntax check for the scenario script
+          bash -n scenarios/basic_rps.sh
+          echo "✓ basic_rps.sh syntax check passed"
+
+  validate-structure:
+    name: Validate Project Structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate module structure
+        run: |
+          echo "Validating project structure..."
+          
+          # Check that all modules have required directories and files
+          for module in kind vegeta jplot; do
+            echo "Checking module: $module"
+            
+            # Check install script exists
+            if [[ ! -f "modules/$module/install/install.sh" ]]; then
+              echo "ERROR: modules/$module/install/install.sh not found"
+              exit 1
+            fi
+            
+            # Check run script exists (except for jplot which has different structure)
+            if [[ "$module" != "jplot" ]] && [[ ! -f "modules/$module/run/run.sh" ]]; then
+              echo "ERROR: modules/$module/run/run.sh not found"
+              exit 1
+            fi
+            
+            # Check jplot run script
+            if [[ "$module" == "jplot" ]] && [[ ! -f "modules/$module/run/run.sh" ]]; then
+              echo "ERROR: modules/$module/run/run.sh not found"
+              exit 1
+            fi
+            
+            # Check test script exists
+            if [[ ! -f "modules/$module/test/test.sh" ]]; then
+              echo "ERROR: modules/$module/test/test.sh not found"
+              exit 1
+            fi
+            
+            # Check scripts are executable or can be made executable
+            chmod +x "modules/$module/install/install.sh"
+            if [[ "$module" != "jplot" ]] || [[ -f "modules/$module/run/run.sh" ]]; then
+              chmod +x "modules/$module/run/run.sh"
+            fi
+            chmod +x "modules/$module/test/test.sh"
+            
+            echo "✓ Module $module structure validated"
+          done
+          
+          # Check scenario files
+          if [[ ! -f "scenarios/basic_rps.sh" ]]; then
+            echo "ERROR: scenarios/basic_rps.sh not found"
+            exit 1
+          fi
+          
+          chmod +x scenarios/basic_rps.sh
+          echo "✓ Scenarios structure validated"
+          
+          # Check charts directory
+          if [[ ! -d "charts/server" ]]; then
+            echo "ERROR: charts/server directory not found"
+            exit 1
+          fi
+          
+          if [[ ! -f "charts/server/Chart.yaml" ]]; then
+            echo "ERROR: charts/server/Chart.yaml not found"
+            exit 1
+          fi
+          
+          echo "✓ Charts structure validated"
+          echo "🎉 All structure validation passed!"
