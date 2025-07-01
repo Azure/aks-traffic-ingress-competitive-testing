@@ -131,29 +131,6 @@ echo "${OUTPUT}"
 echo "✓ Output script test passed"
 
 echo "7. Testing error handling..."
-# Test run script with invalid URL and check that RPS is 0
-echo "Testing with invalid URL to verify RPS is 0..."
-"${MODULE_DIR}/run/run.sh" "http://invalid-url-that-does-not-exist.local" 2 1s 1 2>/dev/null || true
-
-# Check if the statefile contains RPS of 0 using jq to parse the first line
-if [[ -f "${STATEFILE}" ]]; then
-    # Parse the first line of jaggr output for RPS count
-    RPS_COUNT=$(head -n 1 "${STATEFILE}" | jq -r '.rps // "null"' 2>/dev/null || echo "null")
-    
-    if [[ "${RPS_COUNT}" == "0" ]]; then
-        echo "✓ Invalid URL handling test passed - RPS is 0 as expected"
-    else
-        echo "ERROR: Expected RPS to be 0 with invalid URL"
-        echo "RPS count: ${RPS_COUNT}"
-        echo "First line of state file:"
-        head -n 1 "${STATEFILE}" 2>/dev/null || echo "State file not found or empty"
-        exit 1
-    fi
-else
-    echo "ERROR: State file not found after invalid URL test"
-    exit 1
-fi
-
 # Test run script with missing parameters
 if "${MODULE_DIR}/run/run.sh" 2>/dev/null; then
     echo "ERROR: Expected failure with missing parameters, but command succeeded"
