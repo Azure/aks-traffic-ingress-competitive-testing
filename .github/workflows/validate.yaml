@@ -46,18 +46,13 @@ jobs:
         with:
             go-version: '1.23'
 
-      - name: Install Docker and kubectl (for kind module)
+      - name: Install kubectl (for kind module)
         if: matrix.module == 'kind'
         run: |
           # Install kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
-
-          # Install Docker (for KIND)
-          sudo apt-get install -y docker.io
-          sudo systemctl start docker
-          sudo usermod -aG docker $USER
 
       - name: Install Python (for vegeta module)
         if: matrix.module == 'vegeta'
