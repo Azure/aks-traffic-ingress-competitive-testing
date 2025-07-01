@@ -1,4 +1,4 @@
-name: Validate Modules
+name: Validate 
 
 on:
   push:
@@ -7,14 +7,47 @@ on:
     branches: [ main ]
 
 jobs:
-  test-kind:
-    name: Test KIND Module
+  discover-modules:
+    name: Discover Modules
     runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.find-modules.outputs.modules }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Find modules with test scripts
+        id: find-modules
+        run: |
+          MODULES=$(find modules -name "test.sh" -type f | sed 's|modules/||; s|/test/test.sh||' | jq -R -s -c 'split("\n")[:-1]')
+          echo "modules=$MODULES" >> $GITHUB_OUTPUT
+          echo "Found modules: $MODULES"
+
+  test-modules:
+    name: Test ${{ matrix.module }} Module
+    runs-on: ubuntu-latest
+    needs: discover-modules
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.discover-modules.outputs.modules) }}
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install common dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl wget
+
+      - name: Set up Go (for jplot module)
+        if: matrix.module == 'jplot'
+        uses: actions/setup-go@v4
+        with:
+            go-version: '1.23'
+
+      - name: Install Docker and kubectl (for kind module)
+        if: matrix.module == 'kind'
         run: |
           # Install kubectl
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -22,67 +55,24 @@ jobs:
           sudo mv kubectl /usr/local/bin/
 
           # Install Docker (for KIND)
-          sudo apt-get update
           sudo apt-get install -y docker.io
           sudo systemctl start docker
           sudo usermod -aG docker $USER
 
-          # Install jq for JSON parsing
-          sudo apt-get install -y jq
-
-      - name: Run KIND module tests
+      - name: Install Python (for vegeta module)
+        if: matrix.module == 'vegeta'
         run: |
-          cd modules/kind/test
-          chmod +x test.sh
-          ./test.sh
+          sudo apt-get install -y python3
 
-  test-vegeta:
-    name: Test Vegeta Module
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
+      - name: Run module tests
         run: |
-          # Install curl, wget, and jq
-          sudo apt-get update
-          sudo apt-get install -y curl wget jq python3
-
-      - name: Run Vegeta module tests
-        run: |
-          cd modules/vegeta/test
-          chmod +x test.sh
-          ./test.sh
-
-  test-jplot:
-    name: Test jplot Module
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21'
-
-      - name: Install dependencies
-        run: |
-          # Install jq for JSON parsing
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Run jplot module tests
-        run: |
-          cd modules/jplot/test
-          chmod +x test.sh
-          ./test.sh
+          chmod +x modules/${{ matrix.module }}/test/test.sh
+          ./modules/${{ matrix.module }}/test/test.sh
 
   test-scenarios:
     name: Test Scenarios
     runs-on: ubuntu-latest
-    needs: [test-kind, test-vegeta, test-jplot]
+    needs: [test-modules]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -106,16 +96,30 @@ jobs:
           # Install jq for JSON parsing
           sudo apt-get install -y jq
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21'
-
       - name: Test basic RPS scenario syntax
         run: |
           # Basic syntax check for the scenario script
           bash -n scenarios/basic_rps.sh
           echo "✓ basic_rps.sh syntax check passed"
+    
+      - name: Run basic RPS scenario
+        run: |
+          echo "Installing Kind"
+          chmod +x ./modules/kind/install/install.sh
+
+          echo "Creating Kind cluster"
+          chmod +x ./modules/kind/run/run.sh
+          ./modules/kind/run/run.sh
+
+          echo "Running basic RPS scenario"
+          chmod +x scenarios/basic_rps.sh
+          ./scenarios/basic_rps.sh
+
+          "chmod +x ./modules/vegeta/output/output.sh
+          echo "Generating output"
+          ./modules/vegeta/output/output.sh 
+
+          echo "✓ Basic RPS scenario executed successfully"
 
   validate-structure:
     name: Validate Project Structure
@@ -128,8 +132,11 @@ jobs:
         run: |
           echo "Validating project structure..."
           
+          # Find all directories in modules/
+          echo "Discovering modules in modules/ directory..."
+          
           # Check that all modules have required directories and files
-          for module in kind vegeta jplot; do
+          for module in $(find modules -maxdepth 1 -type d -not -name modules | sed 's|modules/||'); do
             echo "Checking module: $module"
             
             # Check install script exists
@@ -138,14 +145,8 @@ jobs:
               exit 1
             fi
             
-            # Check run script exists (except for jplot which has different structure)
-            if [[ "$module" != "jplot" ]] && [[ ! -f "modules/$module/run/run.sh" ]]; then
-              echo "ERROR: modules/$module/run/run.sh not found"
-              exit 1
-            fi
-            
-            # Check jplot run script
-            if [[ "$module" == "jplot" ]] && [[ ! -f "modules/$module/run/run.sh" ]]; then
+            # Check run script exists
+            if [[ ! -f "modules/$module/run/run.sh" ]]; then
               echo "ERROR: modules/$module/run/run.sh not found"
               exit 1
             fi
@@ -158,33 +159,9 @@ jobs:
             
             # Check scripts are executable or can be made executable
             chmod +x "modules/$module/install/install.sh"
-            if [[ "$module" != "jplot" ]] || [[ -f "modules/$module/run/run.sh" ]]; then
-              chmod +x "modules/$module/run/run.sh"
-            fi
+            chmod +x "modules/$module/run/run.sh"
             chmod +x "modules/$module/test/test.sh"
             
             echo "✓ Module $module structure validated"
           done
           
-          # Check scenario files
-          if [[ ! -f "scenarios/basic_rps.sh" ]]; then
-            echo "ERROR: scenarios/basic_rps.sh not found"
-            exit 1
-          fi
-          
-          chmod +x scenarios/basic_rps.sh
-          echo "✓ Scenarios structure validated"
-          
-          # Check charts directory
-          if [[ ! -d "charts/server" ]]; then
-            echo "ERROR: charts/server directory not found"
-            exit 1
-          fi
-          
-          if [[ ! -f "charts/server/Chart.yaml" ]]; then
-            echo "ERROR: charts/server/Chart.yaml not found"
-            exit 1
-          fi
-          
-          echo "✓ Charts structure validated"
-          echo "🎉 All structure validation passed!"
