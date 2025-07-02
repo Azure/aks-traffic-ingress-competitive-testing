@@ -1,15 +1,38 @@
 name: Validate 
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
 
 jobs:
+  start-status:
+    name: Start Status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set commit status to pending
+        uses: ./.github/actions/start-status
+        with:
+          name: "Validate"
+          ref: ${{ github.sha }}
+
+  end-status:
+    name: End Status
+    runs-on: ubuntu-latest
+    needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts]
+    steps:
+      - name: Set commit status to success or failure
+        uses: ./.github/actions/end-status
+        with:
+          name: "Validate Workflow"
+          ref: ${{ github.sha }}
+
   discover-modules:
     name: Discover Modules
     runs-on: ubuntu-latest
+    needs: start-status
     outputs:
       modules: ${{ steps.find-modules.outputs.modules }}
     steps:
@@ -26,7 +49,7 @@ jobs:
   test-modules:
     name: Test ${{ matrix.module }} Module
     runs-on: ubuntu-latest
-    needs: discover-modules
+    needs: [discover-modules, start-status]
     strategy:
       matrix:
         module: ${{ fromJson(needs.discover-modules.outputs.modules) }}
@@ -62,7 +85,7 @@ jobs:
   test-scenarios:
     name: Test Scenarios
     runs-on: ubuntu-latest
-    needs: [test-modules]
+    needs: [test-modules, start-status]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -120,6 +143,7 @@ jobs:
   validate-structure:
     name: Validate Project Structure
     runs-on: ubuntu-latest
+    needs: start-status
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -164,6 +188,7 @@ jobs:
   test-charts:
     name: Validate Charts
     runs-on: ubuntu-latest
+    needs: start-status
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
