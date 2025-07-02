@@ -22,6 +22,7 @@ jobs:
           ref: ${{ github.sha }}
 
   end-status:
+    if: always() 
     name: End Status
     runs-on: ubuntu-latest
     needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts]
