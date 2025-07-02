@@ -104,9 +104,16 @@ jobs:
           chmod +x scenarios/basic_rps.sh
           ./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL
 
+          echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
-          echo "Generating output"
-          ./modules/vegeta/output/output.sh 
+          STATUS_200_COUNT=$(./modules/vegeta/output/output.sh | head -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+          if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
+            echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
+          else
+            echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
+            ./modules/vegeta/output/output.sh | head -n 1
+            exit 1
+          fi
 
           echo "✓ Basic RPS scenario executed successfully"
 
