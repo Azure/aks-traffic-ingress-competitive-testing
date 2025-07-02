@@ -22,8 +22,8 @@ jobs:
           ref: ${{ github.sha }}
 
   end-status:
-    if: always() 
     name: End Status
+    if: always() 
     runs-on: ubuntu-latest
     needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts]
     permissions:
@@ -33,7 +33,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+        # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#steps-context
+        # it would be preferable to check the inverse of the if below by comparing solely to 'success' but there's no way to do that with a wildcard and the current
+        # set of GitHub workflow functions
+      - if: >-
+          ${{
+            contains(needs.*.result, 'failure') ||
+            contains(needs.*.result, 'cancelled') ||
+            contains(needs.*.result, 'skipped')
+          }}
+        run: exit 1 # will make status show as failure
+
       - name: Set commit status to success or failure
+        if: always()
         uses: ./.github/actions/end-status
         with:
           name: "Validate"
