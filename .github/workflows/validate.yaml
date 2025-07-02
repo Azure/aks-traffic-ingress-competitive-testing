@@ -26,7 +26,7 @@ jobs:
       - name: Set commit status to success or failure
         uses: ./.github/actions/end-status
         with:
-          name: "Validate Workflow"
+          name: "Validate"
           ref: ${{ github.sha }}
 
   discover-modules:
