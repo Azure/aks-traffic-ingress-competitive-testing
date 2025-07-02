@@ -7,6 +7,7 @@ Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tool
 ## Verifying locally
 
 We verify that scripts work locally before making changes and also add automated testing to ensure scripts work.
+test
 
 For example, to ensure that the simple RPS is working locally we can use the following commands
 
