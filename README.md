@@ -58,6 +58,10 @@ Note: all modules expect to be **run from the root directory of this project**.
 
 [/scenarios](./scenarios/) contains files that run tests. These scenarios assume that a Kubernetes cluster is set in the kubectl context. Their output is JSON so that consumers can decide on the final display format themselves.
 
+## Release 
+
+Update the [CHANGELOG.md](./CHANGELOG.md) to contain the new release. After the CHANGELOG has been updated and merged, you can start a release by going to the `Actions` tab and selecting `Release` on the left. Then click `Run workflow` and input the required parameters. It's very important that the SHA used is one that matches the changes detailed in the CHANGELOG exactly.
+
 ## Notice
 
 Trademarks This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies.
