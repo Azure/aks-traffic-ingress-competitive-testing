@@ -54,11 +54,6 @@ jobs:
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-      - name: Install Python (for vegeta module)
-        if: matrix.module == 'vegeta'
-        run: |
-          sudo apt-get install -y python3
-
       - name: Run module tests
         run: |
           chmod +x modules/${{ matrix.module }}/test/test.sh

@@ -2,7 +2,7 @@
 
 Collection of common scripts and tooling to be used by AKS Ingress competitive testing.
 
-Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), Python3, Go and [jq](https://jqlang.org/download/) are already installed.
+Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), Go and [jq](https://jqlang.org/download/) are already installed.
 
 ## Verifying locally
 
