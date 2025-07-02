@@ -30,6 +30,9 @@ helm upgrade --install server ./charts/server \
     --set ingress.className=$INGRESS_CLASS \
     --wait
 
+# just sleep for a bit to ensure everything is ready, add some better health and liveness checks to server in future
+sleep 5s
+
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh
 ./modules/vegeta/run/run.sh "$INGRESS_URL" 50 30s 10

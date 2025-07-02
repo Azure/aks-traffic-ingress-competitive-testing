@@ -10,16 +10,21 @@ PROJECT_ROOT=$( cd "${MODULE_DIR}/../.." ; pwd -P )
 
 # Test HTTP server setup
 TEST_PORT="9999"
-TEST_SERVER_PID=""
+TEST_CONTAINER_NAME="vegeta-test-server"
 
 # Cleanup function
 cleanup() {
     echo "Cleaning up test environment..."
     
-    # Kill test server if running
-    if [[ -n "${TEST_SERVER_PID}" ]]; then
-        kill "${TEST_SERVER_PID}" 2>/dev/null || true
-        wait "${TEST_SERVER_PID}" 2>/dev/null || true
+    # Stop and remove test container if running
+    if docker ps -q -f name="${TEST_CONTAINER_NAME}" | grep -q .; then
+        echo "Stopping test container..."
+        docker stop "${TEST_CONTAINER_NAME}" > /dev/null 2>&1 || true
+    fi
+    
+    if docker ps -aq -f name="${TEST_CONTAINER_NAME}" | grep -q .; then
+        echo "Removing test container..."
+        docker rm "${TEST_CONTAINER_NAME}" > /dev/null 2>&1 || true
     fi
     
     # Clean up any test state files
@@ -29,24 +34,34 @@ cleanup() {
 # Set trap to cleanup on exit
 trap cleanup EXIT
 
-# Start a simple test HTTP server
+# Start a test HTTP server using Docker
 start_test_server() {
-    echo "Starting test HTTP server on port ${TEST_PORT}..."
+    echo "Starting test HTTP server on port ${TEST_PORT} using Docker..."
     
-    # Start a simple Python HTTP server in background
-    python3 -m http.server "${TEST_PORT}" --directory /tmp > /dev/null 2>&1 &
-    TEST_SERVER_PID=$!
+    # Start the Docker container with the specified image
+    docker run -d \
+        --name "${TEST_CONTAINER_NAME}" \
+        -p "${TEST_PORT}:${TEST_PORT}" \
+        -e PORT="${TEST_PORT}" \
+        ghcr.io/azure/aks-traffic-ingress-competitive-testing:8aba95806ff611e9939257e2c3c9f53b3af5f7a2 > /dev/null
     
     # Wait for server to start
-    sleep 2
+    echo "Waiting for server to start..."
+    sleep 5
     
     # Verify server is running
-    if ! curl -s "http://localhost:${TEST_PORT}" > /dev/null; then
-        echo "ERROR: Test server failed to start"
-        exit 1
-    fi
+    for i in {1..10}; do
+        if curl -s "http://localhost:${TEST_PORT}" > /dev/null; then
+            echo "✓ Test server started successfully"
+            return 0
+        fi
+        echo "Waiting for server to respond... (attempt $i/10)"
+        sleep 2
+    done
     
-    echo "✓ Test server started successfully"
+    echo "ERROR: Test server failed to start or respond"
+    docker logs "${TEST_CONTAINER_NAME}" 2>&1 || true
+    exit 1
 }
 
 echo "1. Testing Vegeta installation..."
@@ -110,6 +125,17 @@ if ! grep -q "rps" "${STATEFILE}"; then
     echo "ERROR: State file may not contain expected jaggr output format"
     echo "State file content:"
     cat "${STATEFILE}"
+    exit 1
+fi
+
+# Check that we have successful HTTP 200 responses
+STATUS_200_COUNT=$(head -n 1 "${STATEFILE}" | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
+    echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
+else
+    echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
+    echo "First line of state file:"
+    head -n 1 "${STATEFILE}" 2>/dev/null || echo "State file not found or empty"
     exit 1
 fi
 
