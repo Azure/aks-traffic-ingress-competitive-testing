@@ -10,6 +10,9 @@ if [ $# -ne 2 ]; then
     exit 1
 fi
 
+# purposefully break to ensure pr gates
+exit 1
+
 # Assign parameters to variables
 INGRESS_CLASS="$1"
 INGRESS_URL="$2"
