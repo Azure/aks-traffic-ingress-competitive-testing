@@ -29,7 +29,7 @@ RATE=50
 DURATION=30s
 WORKERS=10
 
-./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL
+./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
 
 chmod +x ./modules/vegeta/output/output.sh
 chmod +x ./modules/jplot/run/run.sh
