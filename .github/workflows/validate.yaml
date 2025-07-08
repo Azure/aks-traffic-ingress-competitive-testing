@@ -145,9 +145,14 @@ jobs:
           INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
           INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
+          echo "Setting scenario parameters"
+          RATE=50
+          DURATION=30s
+          WORKERS=10
+
           echo "Running basic RPS scenario"
           chmod +x scenarios/basic_rps.sh
-          ./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL
+          ./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh

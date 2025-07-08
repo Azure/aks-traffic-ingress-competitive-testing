@@ -24,7 +24,12 @@ chmod +x ./modules/kind/output/output.sh
 INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
 INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
-./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL
+echo "Setting scenario parameters"
+RATE=50
+DURATION=30s
+WORKERS=10
+
+./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
 
 chmod +x ./modules/vegeta/output/output.sh
 chmod +x ./modules/jplot/run/run.sh
