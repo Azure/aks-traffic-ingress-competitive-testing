@@ -37,12 +37,12 @@ ingress:
   #    hosts:
   #      - chart-example.local
 
-# This block is for setting up the gateway more information can be found here: https://gateway-api.sigs.k8s.io/
+# This block is for setting up the gateway more information can be found here: https://gateway-api.sigs.k8s.io/api-types/gateway/
 gateway:
   enabled: false
   className: ""
 
-# This block is for setting up the HTTPRoute more information can be found here: https://gateway-api.sigs.k8s.io/
+# This block is for setting up the HTTPRoute more information can be found here: https://gateway-api.sigs.k8s.io/api-types/httproute/
 httproute:
   enabled: false
   hosts:
