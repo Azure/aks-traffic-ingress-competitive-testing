@@ -191,11 +191,10 @@ jobs:
           RATE=50
           DURATION=300s
           WORKERS=10
-          RESTART_INTERVAL=10s
 
           echo "Running restarting backend RPS scenario"
           chmod +x scenarios/restarting_backend_rps.sh
-          ./scenarios/restarting_backend_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS $RESTART_INTERVAL
+          ./scenarios/restarting_backend_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
