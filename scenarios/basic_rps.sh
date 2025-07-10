@@ -27,7 +27,7 @@ echo "  Rate: $RATE"
 echo "  Duration: $DURATION"
 echo "  Workers: $WORKERS"
 
-echo "Install depencencies..."
+echo "Install dependencies..."
 chmod +x ./modules/vegeta/install/install.sh
 ./modules/vegeta/install/install.sh
 
