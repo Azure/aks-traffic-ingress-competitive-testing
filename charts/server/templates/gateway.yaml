@@ -1,0 +1,16 @@
+{{- if .Values.gateway.enabled -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "server.fullname" . }}
+  labels:
+    {{- include "server.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.gateway.className }}
+  gatewayClassName: {{ . }}
+  {{- end }}
+  listeners:
+    - name: http
+      port: {{ $.Values.service.port }}
+      protocol: HTTP
+{{- end }}

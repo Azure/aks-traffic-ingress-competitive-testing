@@ -38,6 +38,15 @@ ingress:
   #    hosts:
   #      - chart-example.local
 
+# This block is for setting up the gateway more information can be found here: https://gateway-api.sigs.k8s.io/api-types/gateway/
+gateway:
+  enabled: false
+  className: ""
+  hosts:
+    - paths:
+        - path: /
+          pathType: PathPrefix
+
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
