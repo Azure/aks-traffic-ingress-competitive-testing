@@ -167,6 +167,49 @@ jobs:
 
           echo "✓ Basic RPS scenario executed successfully"
 
+      - name: Test restarting backend RPS scenario syntax
+        run: |
+          # Basic syntax check for the scenario script
+          bash -n scenarios/restarting_backend_rps.sh
+          echo "✓ restarting_backend_rps.sh syntax check passed"
+
+      - name: Run restarting backend RPS scenario
+        run: |
+          echo "Installing Kind"
+          chmod +x ./modules/kind/install/install.sh
+
+          echo "Creating Kind cluster"
+          chmod +x ./modules/kind/run/run.sh
+          ./modules/kind/run/run.sh
+
+          echo "Get outputs from cluster"
+          chmod +x ./modules/kind/output/output.sh
+          INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
+          INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
+
+          echo "Setting scenario parameters"
+          RATE=50
+          DURATION=300s
+          WORKERS=10
+          RESTART_INTERVAL=10s
+
+          echo "Running restarting backend RPS scenario"
+          chmod +x scenarios/restarting_backend_rps.sh
+          ./scenarios/restarting_backend_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS $RESTART_INTERVAL
+
+          echo "checking for 200 responses"
+          chmod +x ./modules/vegeta/output/output.sh
+          STATUS_200_COUNT=$(./modules/vegeta/output/output.sh | head -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+          if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
+            echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
+          else
+            echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
+            ./modules/vegeta/output/output.sh | head -n 1
+            exit 1
+          fi
+
+          echo "✓ Restarting backend RPS scenario executed successfully"
+
   validate-structure:
     name: Validate Project Structure
     runs-on: ubuntu-latest
