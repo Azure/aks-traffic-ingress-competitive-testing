@@ -149,10 +149,11 @@ jobs:
           RATE=50
           DURATION=30s
           WORKERS=10
+          REPLICA_COUNT=3
 
           echo "Running basic RPS scenario"
           chmod +x scenarios/basic_rps.sh
-          ./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
+          ./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS $REPLICA_COUNT
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
@@ -191,10 +192,11 @@ jobs:
           RATE=50
           DURATION=300s
           WORKERS=10
+          REPLICA_COUNT=3
 
           echo "Running restarting backend RPS scenario"
           chmod +x scenarios/restarting_backend_rps.sh
-          ./scenarios/restarting_backend_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
+          ./scenarios/restarting_backend_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS $REPLICA_COUNT
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
