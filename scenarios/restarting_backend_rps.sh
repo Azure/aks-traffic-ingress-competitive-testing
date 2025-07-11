@@ -20,7 +20,7 @@ RATE="$3"
 DURATION="$4"
 WORKERS="$5"
 
-echo "Starting basic RPS test with:"
+echo "Starting restarting backend RPS test with:"
 echo "  Ingress Class: $INGRESS_CLASS"
 echo "  Ingress URL: $INGRESS_URL"
 echo "  Rate: $RATE"
@@ -44,4 +44,17 @@ sleep 5s
 
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh
-./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS"
+./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS" &
+VEGETA_PID=$!
+
+# Start restart loop
+while kill -0 $VEGETA_PID 2>/dev/null; do
+    sleep 10s
+
+    echo "Restarting backend pods..."
+    kubectl rollout restart deployment server -n server
+    kubectl rollout status deployment server -n server
+    echo "Rollout completed."
+done
+
+wait $VEGETA_PID

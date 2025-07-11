@@ -31,6 +31,9 @@ WORKERS=10
 
 ./scenarios/basic_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
 
+# To test out the restarting backend scenario, run this command instead
+# ./scenarios/restarting_backend_rps.sh $INGRESS_CLASS $INGRESS_URL $RATE $DURATION $WORKERS
+
 chmod +x ./modules/vegeta/output/output.sh
 chmod +x ./modules/jplot/run/run.sh
 ./modules/vegeta/output/output.sh | ./modules/jplot/run/run.sh vegeta
