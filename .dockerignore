@@ -1,0 +1,25 @@
+# Docker ignore file
+
+# Git
+.git
+.github
+.gitignore
+
+# Temp files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+*/node_modules
+*/dist
+*/build
+*/target
+
+# Logs
+*.log
+
+# Local dev files
+.env*
+*.local

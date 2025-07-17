@@ -4,6 +4,38 @@ Collection of common scripts and tooling to be used by AKS Ingress competitive t
 
 Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), Go and [jq](https://jqlang.org/download/) are already installed.
 
+## Docker Image
+
+This repository provides an all-in-one Docker image that includes all the necessary tools and dependencies for running the test scenarios and the server.
+
+### Using the Docker Image
+
+```bash
+# Pull the image
+docker pull ghcr.io/azure/aks-traffic-ingress-competitive-testing:latest
+
+# Run a scenario (mount Docker socket for KIND cluster creation)
+docker run -it --rm \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/azure/aks-traffic-ingress-competitive-testing \
+  bash scenarios/basic_rps.sh
+
+# Run the server
+docker run -it --rm -p 3333:3333 \
+  ghcr.io/azure/aks-traffic-ingress-competitive-testing \
+  bash -c "cd server && ./server"
+```
+
+### Building the Docker Image Locally
+
+```bash
+# Build the image
+docker build -t aks-ingress-testing .
+
+# Run the image
+docker run -it --rm aks-ingress-testing
+```
+
 ## Verifying locally
 
 We verify that scripts work locally before making changes and also add automated testing to ensure scripts work.
