@@ -122,8 +122,6 @@ jobs:
           # Install Helm
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-          # Install jq for JSON parsing
-          sudo apt-get install -y jq
 
       - name: Test basic RPS scenario syntax
         run: |
@@ -145,9 +143,15 @@ jobs:
           INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
           INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
-          echo "Running basic RPS scenario"
+          echo "Running basic RPS scenario with environment variables"
           chmod +x scenarios/basic_rps.sh
-          echo "{\"ingress_class\": \"$INGRESS_CLASS\", \"ingress_url\": \"$INGRESS_URL\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}" | ./scenarios/basic_rps.sh
+          export INGRESS_CLASS="$INGRESS_CLASS"
+          export INGRESS_URL="$INGRESS_URL"
+          export RATE="50"
+          export DURATION="30s"
+          export WORKERS="10"
+          export REPLICA_COUNT="3"
+          ./scenarios/basic_rps.sh
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
@@ -182,9 +186,15 @@ jobs:
           INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
           INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
-          echo "Running restarting backend RPS scenario"
+          echo "Running restarting backend RPS scenario with environment variables"
           chmod +x scenarios/restarting_backend_rps.sh
-          echo "{\"ingress_class\": \"$INGRESS_CLASS\", \"ingress_url\": \"$INGRESS_URL\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}" | ./scenarios/restarting_backend_rps.sh
+          export INGRESS_CLASS="$INGRESS_CLASS"
+          export INGRESS_URL="$INGRESS_URL"
+          export RATE="50"
+          export DURATION="30s"
+          export WORKERS="10"
+          export REPLICA_COUNT="3"
+          ./scenarios/restarting_backend_rps.sh
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
