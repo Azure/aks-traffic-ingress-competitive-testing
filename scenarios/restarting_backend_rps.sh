@@ -4,58 +4,35 @@ set -e
 
 # Function to show usage
 show_usage() {
-    echo "Usage: echo '{\"ingress_class\": \"nginx\", \"ingress_url\": \"http://example.com\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}' | $0"
+    echo "Usage: Set environment variables and run the script"
     echo ""
-    echo "Required JSON fields:"
-    echo "  ingress_class: The ingress class to test (e.g., nginx, traefik, istio)"
-    echo "  ingress_url: The URL to send requests to (e.g., http://example.com)"
-    echo "  rate: The rate of requests per second (e.g., 50)"
-    echo "  duration: The duration of the test (e.g., 30s)"
-    echo "  workers: The number of worker processes to use (e.g., 10)"
-    echo "  replica_count: The number of replicas for the server deployment (e.g., 3)"
+    echo "Required environment variables:"
+    echo "  INGRESS_CLASS: The ingress class to test (e.g., nginx, traefik, istio)"
+    echo "  INGRESS_URL: The URL to send requests to (e.g., http://example.com)"
+    echo "  RATE: The rate of requests per second (e.g., 50)"
+    echo "  DURATION: The duration of the test (e.g., 30s)"
+    echo "  WORKERS: The number of worker processes to use (e.g., 10)"
+    echo "  REPLICA_COUNT: The number of replicas for the server deployment (e.g., 3)"
+    echo ""
+    echo "Example:"
+    echo "  INGRESS_CLASS=nginx INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 REPLICA_COUNT=3 $0"
     exit 1
 }
 
-# Check if jq is installed
-if ! command -v jq &> /dev/null; then
-    echo "Error: jq is required but not installed. Please install jq first."
-    exit 1
-fi
-
-# Read JSON from stdin
-if [ -t 0 ]; then
-    echo "Error: No JSON input provided via stdin"
-    show_usage
-fi
-
-# Read all input at once
-input_json=$(cat)
-
-# Validate JSON format
-if ! echo "$input_json" | jq empty 2>/dev/null; then
-    echo "Error: Invalid JSON format"
-    show_usage
-fi
-
-# Extract parameters using jq
-INGRESS_CLASS=$(echo "$input_json" | jq -r '.ingress_class // empty')
-INGRESS_URL=$(echo "$input_json" | jq -r '.ingress_url // empty')
-RATE=$(echo "$input_json" | jq -r '.rate // empty')
-DURATION=$(echo "$input_json" | jq -r '.duration // empty')
-WORKERS=$(echo "$input_json" | jq -r '.workers // empty')
-REPLICA_COUNT=$(echo "$input_json" | jq -r '.replica_count // empty')
+# Set defaults if not provided
+INGRESS_CLASS=${INGRESS_CLASS:-"nginx"}
+INGRESS_URL=${INGRESS_URL:-""}
+RATE=${RATE:-"50"}
+DURATION=${DURATION:-"30s"}
+WORKERS=${WORKERS:-"10"}
+REPLICA_COUNT=${REPLICA_COUNT:-"3"}
 
 # Validate required parameters
 missing_params=()
-[ -z "$INGRESS_CLASS" ] && missing_params+=("ingress_class")
-[ -z "$INGRESS_URL" ] && missing_params+=("ingress_url")
-[ -z "$RATE" ] && missing_params+=("rate")
-[ -z "$DURATION" ] && missing_params+=("duration")
-[ -z "$WORKERS" ] && missing_params+=("workers")
-[ -z "$REPLICA_COUNT" ] && missing_params+=("replica_count")
+[ -z "$INGRESS_URL" ] && missing_params+=("INGRESS_URL")
 
 if [ ${#missing_params[@]} -gt 0 ]; then
-    echo "Error: Missing required parameters: ${missing_params[*]}"
+    echo "Error: Missing required environment variables: ${missing_params[*]}"
     show_usage
 fi
 

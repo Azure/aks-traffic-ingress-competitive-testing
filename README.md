@@ -26,12 +26,24 @@ INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
 echo "Running basic RPS scenario"
 chmod +x scenarios/basic_rps.sh
-echo "{\"ingress_class\": \"$INGRESS_CLASS\", \"ingress_url\": \"$INGRESS_URL\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}" | ./scenarios/basic_rps.sh
+export INGRESS_CLASS="$INGRESS_CLASS"
+export INGRESS_URL="$INGRESS_URL"
+export RATE="50"
+export DURATION="30s"
+export WORKERS="10"
+export REPLICA_COUNT="3"
+./scenarios/basic_rps.sh
 
 # To test out the restarting backend scenario, run these commands instead
 # echo "Running restarting backend RPS scenario"
 # chmod +x scenarios/restarting_backend_rps.sh
-# echo "{\"ingress_class\": \"$INGRESS_CLASS\", \"ingress_url\": \"$INGRESS_URL\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}" | ./scenarios/restarting_backend_rps.sh
+# export INGRESS_CLASS="$INGRESS_CLASS"
+# export INGRESS_URL="$INGRESS_URL"
+# export RATE="50"
+# export DURATION="30s"
+# export WORKERS="10"
+# export REPLICA_COUNT="3"
+# ./scenarios/restarting_backend_rps.sh
 
 chmod +x ./modules/vegeta/output/output.sh
 chmod +x ./modules/jplot/run/run.sh
