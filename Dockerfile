@@ -88,9 +88,6 @@ WORKDIR /app
 # Copy server binary from builder
 COPY --from=server-builder /app/server/server /app/server/
 
-# Set environment variables
-ENV PATH=$PATH:/app
-
 # Create entrypoint script to handle different commands
 RUN printf '%s\n' \
     '#!/bin/bash' \
@@ -111,6 +108,8 @@ RUN printf '%s\n' \
     'fi' \
     > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
+SHELL [ "/bin/bash", "-c" ]
+
 # Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]
 
@@ -119,7 +118,7 @@ CMD []
 
 # Usage examples in comments:
 # Run basic RPS scenario:
-# docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/azure/aks-traffic-ingress-competitive-testing basic_rps
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing basic_rps
 #
 # Run the server:
-# docker run -it --rm -p 3333:3333 ghcr.io/azure/aks-traffic-ingress-competitive-testing server
+# docker run -p 3333:3333 ghcr.io/azure/aks-traffic-ingress-competitive-testing server
