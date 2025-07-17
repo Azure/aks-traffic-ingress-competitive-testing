@@ -4,38 +4,6 @@ Collection of common scripts and tooling to be used by AKS Ingress competitive t
 
 Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/), [helm](https://helm.sh/docs/intro/install/), Go and [jq](https://jqlang.org/download/) are already installed.
 
-## Docker Image
-
-This repository provides an all-in-one Docker image that includes all the necessary tools and dependencies for running the test scenarios and the server.
-
-### Using the Docker Image
-
-```bash
-# Pull the image
-docker pull ghcr.io/azure/aks-traffic-ingress-competitive-testing:latest
-
-# Run a scenario (mount Docker socket for KIND cluster creation)
-docker run -it --rm \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/azure/aks-traffic-ingress-competitive-testing \
-  bash scenarios/basic_rps.sh
-
-# Run the server
-docker run -it --rm -p 3333:3333 \
-  ghcr.io/azure/aks-traffic-ingress-competitive-testing \
-  bash -c "cd server && ./server"
-```
-
-### Building the Docker Image Locally
-
-```bash
-# Build the image
-docker build -t aks-ingress-testing .
-
-# Run the image
-docker run -it --rm aks-ingress-testing
-```
-
 ## Verifying locally
 
 We verify that scripts work locally before making changes and also add automated testing to ensure scripts work.
@@ -58,12 +26,24 @@ INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
 echo "Running basic RPS scenario"
 chmod +x scenarios/basic_rps.sh
-echo "{\"ingress_class\": \"$INGRESS_CLASS\", \"ingress_url\": \"$INGRESS_URL\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}" | ./scenarios/basic_rps.sh
+export INGRESS_CLASS="$INGRESS_CLASS"
+export INGRESS_URL="$INGRESS_URL"
+export RATE="50"
+export DURATION="30s"
+export WORKERS="10"
+export REPLICA_COUNT="3"
+./scenarios/basic_rps.sh
 
 # To test out the restarting backend scenario, run these commands instead
 # echo "Running restarting backend RPS scenario"
 # chmod +x scenarios/restarting_backend_rps.sh
-# echo "{\"ingress_class\": \"$INGRESS_CLASS\", \"ingress_url\": \"$INGRESS_URL\", \"rate\": \"50\", \"duration\": \"30s\", \"workers\": \"10\", \"replica_count\": \"3\"}" | ./scenarios/restarting_backend_rps.sh
+# export INGRESS_CLASS="$INGRESS_CLASS"
+# export INGRESS_URL="$INGRESS_URL"
+# export RATE="50"
+# export DURATION="30s"
+# export WORKERS="10"
+# export REPLICA_COUNT="3"
+# ./scenarios/restarting_backend_rps.sh
 
 chmod +x ./modules/vegeta/output/output.sh
 chmod +x ./modules/jplot/run/run.sh
