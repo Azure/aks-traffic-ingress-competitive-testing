@@ -94,15 +94,15 @@ RUN printf '%s\n' \
     'if [ $# -eq 0 ]; then' \
     '  echo "AKS Traffic Ingress Competitive Testing Environment"' \
     '  echo "Available commands:"' \
-    '  echo "- Run scenario: docker run <image> basic_rps [args...]"' \
+    '  echo "- Run scenario: docker run <image> basic-rps [args...]"' \
     '  echo "- Run server: docker run <image> server"' \
     '  echo "- Run custom command: docker run <image> bash -c \"your_command\""' \
     'elif [ "$1" = "server" ]; then' \
     '  cd /app/server && ./server' \
-    'elif [ -f "/app/scenarios/$1.sh" ]; then' \
+    'elif [ -f "/app/scenarios/$1/run/run.sh" ]; then' \
     '  scenario_name="$1"' \
     '  shift' \
-    '  bash "/app/scenarios/${scenario_name}.sh" "$@"' \
+    '  bash "/app/scenarios/${scenario_name}/run/run.sh" "$@"' \
     'else' \
     '  exec "$@"' \
     'fi' \
@@ -118,7 +118,7 @@ CMD []
 
 # Usage examples in comments:
 # Run basic RPS scenario:
-# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing basic_rps
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing basic-rps
 #
 # Run the server:
 # docker run -p 3333:3333 ghcr.io/azure/aks-traffic-ingress-competitive-testing server

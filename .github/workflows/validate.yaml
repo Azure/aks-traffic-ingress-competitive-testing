@@ -126,8 +126,8 @@ jobs:
       - name: Test basic RPS scenario syntax
         run: |
           # Basic syntax check for the scenario script
-          bash -n scenarios/basic_rps.sh
-          echo "✓ basic_rps.sh syntax check passed"
+          bash -n scenarios/basic-rps/run/run.sh
+          echo "✓ basic-rps syntax check passed"
     
       - name: Run basic RPS scenario
         run: |
@@ -144,14 +144,14 @@ jobs:
           INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
           echo "Running basic RPS scenario with environment variables"
-          chmod +x scenarios/basic_rps.sh
+          chmod +x scenarios/basic-rps/run/run.sh
           export INGRESS_CLASS="$INGRESS_CLASS"
           export INGRESS_URL="$INGRESS_URL"
           export RATE="50"
           export DURATION="30s"
           export WORKERS="10"
           export REPLICA_COUNT="3"
-          ./scenarios/basic_rps.sh
+          ./scenarios/basic-rps/run/run.sh
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
@@ -169,8 +169,8 @@ jobs:
       - name: Test restarting backend RPS scenario syntax
         run: |
           # Basic syntax check for the scenario script
-          bash -n scenarios/restarting_backend_rps.sh
-          echo "✓ restarting_backend_rps.sh syntax check passed"
+          bash -n scenarios/restarting-backend-rps/run/run.sh
+          echo "✓ restarting-backend-rps syntax check passed"
 
       - name: Run restarting backend RPS scenario
         run: |
@@ -187,14 +187,14 @@ jobs:
           INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
 
           echo "Running restarting backend RPS scenario with environment variables"
-          chmod +x scenarios/restarting_backend_rps.sh
+          chmod +x scenarios/restarting-backend-rps/run/run.sh
           export INGRESS_CLASS="$INGRESS_CLASS"
           export INGRESS_URL="$INGRESS_URL"
           export RATE="50"
           export DURATION="30s"
           export WORKERS="10"
           export REPLICA_COUNT="3"
-          ./scenarios/restarting_backend_rps.sh
+          ./scenarios/restarting-backend-rps/run/run.sh
 
           echo "checking for 200 responses"
           chmod +x ./modules/vegeta/output/output.sh
