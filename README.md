@@ -36,7 +36,7 @@ export REPLICA_COUNT="3"
 
 # To test out the restarting backend scenario, run these commands instead
 # echo "Running restarting backend RPS scenario"
-# chmod +x scenarios/restarting-backend-rps/run/run.sh
+# chmod +x scenarios/restarting_backend_rps.sh
 # export INGRESS_CLASS="$INGRESS_CLASS"
 # export INGRESS_URL="$INGRESS_URL"
 # export RATE="50"
