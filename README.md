@@ -40,7 +40,7 @@ export REPLICA_COUNT="3"
 # export INGRESS_CLASS="$INGRESS_CLASS"
 # export INGRESS_URL="$INGRESS_URL"
 # export RATE="50"
-# export DURATION="180s"
+# export DURATION="90s"
 # export WORKERS="10"
 # export REPLICA_COUNT="3"
 # ./scenarios/restarting_backend_rps.sh
