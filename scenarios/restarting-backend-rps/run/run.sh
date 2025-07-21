@@ -76,3 +76,9 @@ while kill -0 $VEGETA_PID 2>/dev/null; do
 done
 
 wait $VEGETA_PID
+
+echo "Generating test results..."
+chmod +x ./modules/vegeta/output/output.sh
+./modules/vegeta/output/output.sh > ./scenarios/restarting-backend-rps/result/result.json
+
+echo "Test results saved to ./scenarios/restarting-backend-rps/result/result.json"

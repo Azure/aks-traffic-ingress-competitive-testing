@@ -63,3 +63,9 @@ sleep 5s
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh
 ./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS"
+
+echo "Generating test results..."
+chmod +x ./modules/vegeta/output/output.sh
+./modules/vegeta/output/output.sh > ./scenarios/basic-rps/result/result.json
+
+echo "Test results saved to ./scenarios/basic-rps/result/result.json"
