@@ -127,7 +127,7 @@ jobs:
         run: |
           # Basic syntax check for the scenario script
           bash -n scenarios/basic_rps.sh
-          echo "✓ basic_rps syntax check passed"
+          echo "✓ basic_rps.sh syntax check passed"
 
       - name: Run basic RPS scenario
         run: |
@@ -170,7 +170,7 @@ jobs:
         run: |
           # Basic syntax check for the scenario script
           bash -n scenarios/restarting_backend_rps.sh
-          echo "✓ restarting_backend_rps syntax check passed"
+          echo "✓ restarting_backend_rps.sh syntax check passed"
 
       - name: Run restarting backend RPS scenario
         run: |
