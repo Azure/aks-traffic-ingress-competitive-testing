@@ -65,6 +65,7 @@ chmod +x ./modules/vegeta/run/run.sh
 ./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS"
 
 echo "Generating test results..."
+mkdir -p ./scenarios/basic-rps/result
 chmod +x ./modules/vegeta/output/output.sh
 ./modules/vegeta/output/output.sh > ./scenarios/basic-rps/result/result.json
 

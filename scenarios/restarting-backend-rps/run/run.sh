@@ -78,6 +78,7 @@ done
 wait $VEGETA_PID
 
 echo "Generating test results..."
+mkdir -p ./scenarios/restarting-backend-rps/result
 chmod +x ./modules/vegeta/output/output.sh
 ./modules/vegeta/output/output.sh > ./scenarios/restarting-backend-rps/result/result.json
 
