@@ -13,9 +13,10 @@ show_usage() {
     echo "  DURATION: The duration of the test (e.g., 30s)"
     echo "  WORKERS: The number of worker processes to use (e.g., 10)"
     echo "  REPLICA_COUNT: The number of replicas for the server deployment (e.g., 3)"
+    echo "  OUTPUT_FILE: The file to save the test results (e.g., ./scenarios/results/basic_rps.json)"
     echo ""
     echo "Example:"
-    echo "  INGRESS_CLASS=nginx INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 REPLICA_COUNT=3 $0"
+    echo "  INGRESS_CLASS=nginx INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 REPLICA_COUNT=3 OUTPUT_FILE=./scenarios/results/basic_rps.json $0"
     exit 1
 }
 
@@ -26,6 +27,7 @@ RATE=${RATE:-"50"}
 DURATION=${DURATION:-"30s"}
 WORKERS=${WORKERS:-"10"}
 REPLICA_COUNT=${REPLICA_COUNT:-"3"}
+OUTPUT_FILE=${OUTPUT_FILE:-"./scenarios/results/basic_rps.json"}
 
 # Validate required parameters
 missing_params=()
@@ -43,6 +45,7 @@ echo "  Rate: $RATE"
 echo "  Duration: $DURATION"
 echo "  Workers: $WORKERS"
 echo "  Replica Count: $REPLICA_COUNT"
+echo "  Output File: $OUTPUT_FILE"
 
 echo "Install dependencies..."
 chmod +x ./modules/vegeta/install/install.sh
@@ -65,8 +68,8 @@ chmod +x ./modules/vegeta/run/run.sh
 ./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS"
 
 echo "Generating test results..."
-mkdir -p ./scenarios/results
+mkdir -p "$(dirname "${OUTPUT_FILE}")"
 chmod +x ./modules/vegeta/output/output.sh
-./modules/vegeta/output/output.sh > ./scenarios/results/basic_rps_result.json
+./modules/vegeta/output/output.sh > "$OUTPUT_FILE"
 
-echo "Test results saved to ./scenarios/results/basic_rps_result.json"
+echo "Test results saved to $OUTPUT_FILE"
