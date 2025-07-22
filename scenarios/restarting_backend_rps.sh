@@ -10,12 +10,13 @@ show_usage() {
     echo "  INGRESS_CLASS: The ingress class to test (e.g., nginx, traefik, istio)"
     echo "  INGRESS_URL: The URL to send requests to (e.g., http://example.com)"
     echo "  RATE: The rate of requests per second (e.g., 50)"
-    echo "  DURATION: The duration of the test (e.g., 30s)"
+    echo "  DURATION: The duration of the test (e.g., 90s)"
     echo "  WORKERS: The number of worker processes to use (e.g., 10)"
-    echo "  REPLICA_COUNT: The number of replicas for the server deployment (e.g., 3)"
+    echo "  REPLICA_COUNT: The number of replicas for the server deployment (e.g., 5)"
+    echo "  OUTPUT_FILE: The file to save the test results (e.g., ./scenarios/results/restarting_backend_rps.json)"
     echo ""
     echo "Example:"
-    echo "  INGRESS_CLASS=nginx INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 REPLICA_COUNT=3 $0"
+    echo "  INGRESS_CLASS=nginx INGRESS_URL=http://localhost:8080 RATE=50 DURATION=90s WORKERS=10 REPLICA_COUNT=5 OUTPUT_FILE=./scenarios/results/restarting_backend_rps.json $0"
     exit 1
 }
 
@@ -23,9 +24,10 @@ show_usage() {
 INGRESS_CLASS=${INGRESS_CLASS:-"nginx"}
 INGRESS_URL=${INGRESS_URL:-""}
 RATE=${RATE:-"50"}
-DURATION=${DURATION:-"30s"}
+DURATION=${DURATION:-"90s"}
 WORKERS=${WORKERS:-"10"}
-REPLICA_COUNT=${REPLICA_COUNT:-"3"}
+REPLICA_COUNT=${REPLICA_COUNT:-"5"}
+OUTPUT_FILE=${OUTPUT_FILE:-"./scenarios/results/restarting_backend_rps.json"}
 
 # Validate required parameters
 missing_params=()
@@ -43,6 +45,7 @@ echo "  Rate: $RATE"
 echo "  Duration: $DURATION"
 echo "  Workers: $WORKERS"
 echo "  Replica Count: $REPLICA_COUNT"
+echo "  Output File: $OUTPUT_FILE"
 
 echo "Install dependencies..."
 chmod +x ./modules/vegeta/install/install.sh
@@ -76,3 +79,10 @@ while kill -0 $VEGETA_PID 2>/dev/null; do
 done
 
 wait $VEGETA_PID
+
+echo "Generating test results..."
+mkdir -p "$(dirname "${OUTPUT_FILE}")"
+chmod +x ./modules/vegeta/output/output.sh
+./modules/vegeta/output/output.sh > "$OUTPUT_FILE"
+
+echo "Test results saved to $OUTPUT_FILE"

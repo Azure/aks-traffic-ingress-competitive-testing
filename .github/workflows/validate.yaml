@@ -128,7 +128,7 @@ jobs:
           # Basic syntax check for the scenario script
           bash -n scenarios/basic_rps.sh
           echo "✓ basic_rps.sh syntax check passed"
-    
+
       - name: Run basic RPS scenario
         run: |
           echo "Installing Kind"
@@ -151,6 +151,8 @@ jobs:
           export DURATION="30s"
           export WORKERS="10"
           export REPLICA_COUNT="3"
+          export OUTPUT_FILE="./scenarios/results/basic_rps.json"
+
           ./scenarios/basic_rps.sh
 
           echo "checking for 200 responses"
@@ -193,7 +195,9 @@ jobs:
           export RATE="50"
           export DURATION="30s"
           export WORKERS="10"
-          export REPLICA_COUNT="3"
+          export REPLICA_COUNT="5"
+          export OUTPUT_FILE="./scenarios/results/restarting_backend_rps.json"
+
           ./scenarios/restarting_backend_rps.sh
 
           echo "checking for 200 responses"

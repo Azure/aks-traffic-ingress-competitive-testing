@@ -6,6 +6,9 @@
 # stores state for modules
 statefile.json
 
+# stores results for scenarios
+scenarios/results
+
 # User-specific files
 *.rsuser
 *.suo
