@@ -32,6 +32,7 @@ export RATE="50"
 export DURATION="30s"
 export WORKERS="10"
 export REPLICA_COUNT="3"
+export OUTPUT_FILE="./scenarios/results/basic_rps.json"
 ./scenarios/basic_rps.sh
 
 # To test out the restarting backend scenario, run these commands instead
@@ -42,7 +43,8 @@ export REPLICA_COUNT="3"
 # export RATE="50"
 # export DURATION="90s"
 # export WORKERS="10"
-# export REPLICA_COUNT="3"
+# export REPLICA_COUNT="5"
+# export OUTPUT_FILE="./scenarios/results/restarting_backend_rps.json"
 # ./scenarios/restarting_backend_rps.sh
 
 chmod +x ./modules/vegeta/output/output.sh
