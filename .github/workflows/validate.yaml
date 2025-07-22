@@ -193,7 +193,7 @@ jobs:
           export INGRESS_CLASS="$INGRESS_CLASS"
           export INGRESS_URL="$INGRESS_URL"
           export RATE="50"
-          export DURATION="90s"
+          export DURATION="30s"
           export WORKERS="10"
           export REPLICA_COUNT="5"
           export OUTPUT_FILE="./scenarios/results/restarting_backend_rps.json"
