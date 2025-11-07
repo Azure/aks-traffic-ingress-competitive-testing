@@ -52,13 +52,17 @@ chmod +x ./modules/vegeta/install/install.sh
 ./modules/vegeta/install/install.sh
 
 echo "Applying manifests..."
-helm upgrade --install server ./charts/server \
-    --namespace server \
-    --create-namespace \
-    --set ingress.enabled=true \
-    --set ingress.className=$INGRESS_CLASS \
-    --set replicaCount=$REPLICA_COUNT \
-    --wait
+if [ "${SKIP_HELM_DEPLOYMENT:-false}" = "true" ]; then
+    echo "Skipping Helm deployment"
+else
+    helm upgrade --install server ./charts/server \
+        --namespace server \
+        --create-namespace \
+        --set ingress.enabled=true \
+        --set ingress.className=$INGRESS_CLASS \
+        --set replicaCount=$REPLICA_COUNT \
+        --wait
+fi
 
 # just sleep for a bit to ensure everything is ready, add some better health and liveness checks to server in future
 sleep 5s
