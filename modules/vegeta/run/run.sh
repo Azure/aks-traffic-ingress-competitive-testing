@@ -37,7 +37,7 @@ function run_vegeta_attack() {
             -rate=$rate \
             -duration=$duration \
             -workers=$workers \
-            -header="$headers" | \
+            -header "$headers" | \
         vegeta encode |\
         jaggr @count=rps \
           hist\[100,200,300,400,500\]:code \
