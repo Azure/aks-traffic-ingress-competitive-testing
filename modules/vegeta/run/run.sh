@@ -38,6 +38,7 @@ function run_vegeta_attack() {
             -duration=$duration \
             -workers=$workers \
             -header "$headers" | \
+        tee >(vegeta encode | jq -r 'select(.code == 500) | "500 Error: " + .body' | head -5) | \
         vegeta encode |\
         jaggr @count=rps \
           hist\[100,200,300,400,500\]:code \
@@ -52,6 +53,7 @@ function run_vegeta_attack() {
             -rate=$rate \
             -duration=$duration \
             -workers=$workers | \
+        tee >(vegeta encode | jq -r 'select(.code == 500) | "500 Error: " + .body' | head -5) | \
         vegeta encode |\
         jaggr @count=rps \
           hist\[100,200,300,400,500\]:code \

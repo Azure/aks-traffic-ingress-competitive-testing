@@ -54,7 +54,7 @@ chmod +x ./modules/vegeta/install/install.sh
 ./modules/vegeta/install/install.sh
 
 echo "Applying manifests..."
-if [ "${SKIP_HELM_DEPLOYMENT:-false}" = "true" ]; then
+if [ "${SKIP_HELM_DEPLOYMENT:-false}" = "True" ]; then
     echo "Skipping Helm deployment"
 else
     helm upgrade --install server ./charts/server \
