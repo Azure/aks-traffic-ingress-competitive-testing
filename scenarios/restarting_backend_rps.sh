@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -ex
 
 # Function to show usage
 show_usage() {
@@ -28,6 +28,7 @@ DURATION=${DURATION:-"90s"}
 WORKERS=${WORKERS:-"10"}
 REPLICA_COUNT=${REPLICA_COUNT:-"5"}
 OUTPUT_FILE=${OUTPUT_FILE:-"./scenarios/results/restarting_backend_rps.json"}
+REQUEST_HEADERS=${REQUEST_HEADERS:-""}
 
 # Validate required parameters
 missing_params=()
@@ -46,26 +47,31 @@ echo "  Duration: $DURATION"
 echo "  Workers: $WORKERS"
 echo "  Replica Count: $REPLICA_COUNT"
 echo "  Output File: $OUTPUT_FILE"
+echo "  Request Headers: $REQUEST_HEADERS"
 
 echo "Install dependencies..."
 chmod +x ./modules/vegeta/install/install.sh
 ./modules/vegeta/install/install.sh
 
 echo "Applying manifests..."
-helm upgrade --install server ./charts/server \
-    --namespace server \
-    --create-namespace \
-    --set ingress.enabled=true \
-    --set ingress.className=$INGRESS_CLASS \
-    --set replicaCount=$REPLICA_COUNT \
-    --wait
+if [ "${SKIP_HELM_DEPLOYMENT:-false}" = "True" ]; then
+    echo "Skipping Helm deployment - server already deployed by validation step"
+else
+    helm upgrade --install server ./charts/server \
+        --namespace server \
+        --create-namespace \
+        --set ingress.enabled=true \
+        --set ingress.className=$INGRESS_CLASS \
+        --set replicaCount=$REPLICA_COUNT \
+        --wait
+fi
 
 # just sleep for a bit to ensure everything is ready, add some better health and liveness checks to server in future
 sleep 5s
 
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh
-./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS" &
+./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS" "$REQUEST_HEADERS" &
 VEGETA_PID=$!
 
 # Start restart loop

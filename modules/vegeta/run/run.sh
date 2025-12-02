@@ -3,7 +3,7 @@
 # Script to run Vegeta HTTP load testing attacks
 # https://github.com/tsenart/vegeta
 
-set -e
+set -ex
 
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 statefile="${filepath}/../statefile.json"
@@ -18,20 +18,27 @@ function run_vegeta_attack() {
     local rate="${2:-50}"        # requests per second, default 50
     local duration="${3:-30s}"   # duration of test, default 30s
     local workers="${4:-10}"     # number of workers, default 10
+    local headers="${5:-}"    # additional request headers, default empty
 
     echo "Running Vegeta attack with:"
     echo "- Target URL: $target_url"
     echo "- Rate: $rate requests/second"
     echo "- Duration: $duration"
     echo "- Workers: $workers"
-
+    echo "- Headers: $headers"
+    
+    # Build vegeta attack command
+    local attack_cmd="vegeta attack -rate=$rate -duration=$duration -workers=$workers"
+    if [ -n "$headers" ]; then
+        echo "Using additional headers: $headers"
+        attack_cmd="$attack_cmd -header \"$headers\""
+    else 
+        echo "No additional headers provided."
+    fi
 
     # Run attack and generate report
     echo "GET $target_url" | \
-    vegeta attack \
-        -rate=$rate \
-        -duration=$duration \
-        -workers=$workers | \
+    eval $attack_cmd | \
     vegeta encode |\
     jaggr @count=rps \
       hist\[100,200,300,400,500\]:code \
