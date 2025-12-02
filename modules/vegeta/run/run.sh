@@ -27,41 +27,25 @@ function run_vegeta_attack() {
     echo "- Workers: $workers"
     echo "- Headers: $headers"
     
-
-
-    # Run attack and generate report
+    # Build vegeta attack command
+    local attack_cmd="vegeta attack -rate=$rate -duration=$duration -workers=$workers"
     if [ -n "$headers" ]; then
         echo "Using additional headers: $headers"
-        echo "GET $target_url" | \
-        vegeta attack \
-            -rate=$rate \
-            -duration=$duration \
-            -workers=$workers \
-            -header "$headers" | \
-        tee >(vegeta encode | jq -r 'select(.code == 500) | "500 Error: " + .body' | head -5) | \
-        vegeta encode |\
-        jaggr @count=rps \
-          hist\[100,200,300,400,500\]:code \
-          p25,p50,p99:latency \
-          sum:bytes_in \
-          sum:bytes_out |\
-        tee $statefile
+        attack_cmd="$attack_cmd -header \"$headers\""
     else 
         echo "No additional headers provided."
-        echo "GET $target_url" | \
-        vegeta attack \
-            -rate=$rate \
-            -duration=$duration \
-            -workers=$workers | \
-        tee >(vegeta encode | jq -r 'select(.code == 500) | "500 Error: " + .body' | head -5) | \
-        vegeta encode |\
-        jaggr @count=rps \
-          hist\[100,200,300,400,500\]:code \
-          p25,p50,p99:latency \
-          sum:bytes_in \
-          sum:bytes_out |\
-        tee $statefile
     fi
+
+    # Run attack and generate report
+    echo "GET $target_url" | \
+    eval $attack_cmd | \
+    vegeta encode |\
+    jaggr @count=rps \
+      hist\[100,200,300,400,500\]:code \
+      p25,p50,p99:latency \
+      sum:bytes_in \
+      sum:bytes_out |\
+    tee $statefile
 }
 
 # If script is run directly (not sourced)
