@@ -2,9 +2,6 @@
 
 name: Start Status
 description: 'Adds a commit status at the start of the test run to set the status to pending'
-permissions:
-  statuses: write
-  contents: read
 inputs:
   name:
     description: "Name of the check"
