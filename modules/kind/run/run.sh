@@ -32,23 +32,10 @@ nodes:
     protocol: TCP
 EOF
 
-    # Install ingress-nginx
-    kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml --context "kind-${cluster_name}"
-
-    # Wait for ingress-nginx to be ready
-    echo "Waiting for ingress-nginx to be ready..."
-    # Sleep to allow the ingress controller pods to be created
-    sleep 10s
-    kubectl wait --namespace ingress-nginx \
-        --for=condition=ready pod \
-        --selector=app.kubernetes.io/component=controller \
-        --timeout=90s \
-        --context "kind-${cluster_name}"
-
     echo "Cluster ${cluster_name} is ready!"
 
     # Save to state file
-    echo "{\"cluster_name\": \"${cluster_name}\", \"ingress_class\": \"nginx\", \"ingress_url\": \"http://localhost:${host_port}\"}" > "${statefile}"
+    echo "{\"cluster_name\": \"${cluster_name}\", \"host_port\": \"${host_port}\"}" > "${statefile}"
 }
 
 function set_kubectl_context() {
