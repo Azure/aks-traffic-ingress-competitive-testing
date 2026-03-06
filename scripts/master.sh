@@ -14,6 +14,34 @@
 set -ex
 
 # ---------------------------------------------------------------------------
+# Cleanup trap — ensures resources are freed even if the script fails
+# ---------------------------------------------------------------------------
+
+cleanup() {
+    echo ""
+    echo "============================================================"
+    echo "Cleaning up..."
+    echo "============================================================"
+
+    # Kill port-forward process if it was started (gateway mode)
+    if [ -n "${PORT_FORWARD_PID:-}" ] && kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then
+        echo "Stopping port-forward (PID $PORT_FORWARD_PID)..."
+        kill "$PORT_FORWARD_PID" 2>/dev/null || true
+        wait "$PORT_FORWARD_PID" 2>/dev/null || true
+        echo "Port-forward stopped."
+    fi
+
+    # Delete the Kind cluster if it exists
+    if [ -n "${CLUSTER_NAME:-}" ] && kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+        echo "Deleting Kind cluster '$CLUSTER_NAME'..."
+        kind delete cluster --name "$CLUSTER_NAME" 2>/dev/null || true
+        echo "Kind cluster '$CLUSTER_NAME' deleted."
+    fi
+}
+
+trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
 # Usage
 # ---------------------------------------------------------------------------
 
@@ -274,24 +302,8 @@ chmod +x "$SCENARIO_SCRIPT"
 "$SCENARIO_SCRIPT"
 
 # ---------------------------------------------------------------------------
-# Step 7: Delete Kind cluster
+# Done — cleanup is handled by the EXIT trap
 # ---------------------------------------------------------------------------
-
-echo ""
-echo "============================================================"
-echo "Step 7: Cleaning up"
-echo "============================================================"
-
-# Kill port-forward process if it was started (gateway mode)
-if [ -n "${PORT_FORWARD_PID:-}" ] && kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then
-    echo "Stopping port-forward (PID $PORT_FORWARD_PID)..."
-    kill "$PORT_FORWARD_PID" 2>/dev/null || true
-    wait "$PORT_FORWARD_PID" 2>/dev/null || true
-    echo "Port-forward stopped."
-fi
-
-kind delete cluster --name "$CLUSTER_NAME"
-echo "Kind cluster '$CLUSTER_NAME' deleted"
 
 echo ""
 echo "============================================================"
