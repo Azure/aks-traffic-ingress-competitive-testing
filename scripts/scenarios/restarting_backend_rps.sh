@@ -13,11 +13,11 @@ show_usage() {
     echo "  RATE: The rate of requests per second (default: 50)"
     echo "  DURATION: The duration of the test (default: 90s)"
     echo "  WORKERS: The number of worker processes to use (default: 10)"
-    echo "  OUTPUT_FILE: The file to save the test results (default: ./scenarios/results/restarting_backend_rps.json)"
+    echo "  OUTPUT_FILE: The file to save the test results (default: ./results/restarting_backend_rps.json)"
     echo "  REQUEST_HEADERS: Additional request headers"
     echo ""
     echo "Example:"
-    echo "  INGRESS_URL=http://localhost:8080 RATE=50 DURATION=90s WORKERS=10 OUTPUT_FILE=./scenarios/results/restarting_backend_rps.json $0"
+    echo "  INGRESS_URL=http://localhost:8080 RATE=50 DURATION=90s WORKERS=10 OUTPUT_FILE=./results/restarting_backend_rps.json $0"
     exit 1
 }
 
@@ -26,7 +26,7 @@ INGRESS_URL=${INGRESS_URL:-""}
 RATE=${RATE:-"50"}
 DURATION=${DURATION:-"90s"}
 WORKERS=${WORKERS:-"10"}
-OUTPUT_FILE=${OUTPUT_FILE:-"./scenarios/results/restarting_backend_rps.json"}
+OUTPUT_FILE=${OUTPUT_FILE:-"./results/restarting_backend_rps.json"}
 REQUEST_HEADERS=${REQUEST_HEADERS:-""}
 
 # Validate required parameters
