@@ -19,8 +19,8 @@ kubectl apply -f ./manifests/crds/gateway-crd.yaml
 echo "Installing istioctl..."
 curl -L https://istio.io/downloadIstio | sh -
 
-# The download creates a directory like istio-1.x.x — find it
-ISTIO_DIR=$(ls -d istio-* | head -n 1)
+# Derive the directory name from the istioctl binary that was just downloaded
+ISTIO_DIR=$(find . -maxdepth 1 -type d -name 'istio-*' -printf '%T@ %p\n' | sort -rn | head -n1 | cut -d' ' -f2)
 export PATH="${ISTIO_DIR}/bin:${PATH}"
 
 echo "Verifying istioctl installation..."
