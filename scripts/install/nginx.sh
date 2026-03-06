@@ -21,4 +21,23 @@ kubectl wait --namespace ingress-nginx \
     --selector=app.kubernetes.io/component=controller \
     --timeout=90s
 
+# Wait for the admission webhook Service endpoints to be populated.
+# This is a necessary (but not always sufficient) condition — kube-proxy
+# iptables rules can still take a moment to propagate after this.
+# The Helm install in ingress.sh has retry logic to handle the remaining gap.
+echo "Waiting for ingress-nginx admission webhook endpoint..."
+for i in $(seq 1 30); do
+    if kubectl get endpoints ingress-nginx-controller-admission -n ingress-nginx \
+        -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null | grep -q .; then
+        echo "Admission webhook endpoint is populated."
+        break
+    fi
+    if [ "$i" -eq 30 ]; then
+        echo "ERROR: Timed out waiting for admission webhook endpoint."
+        exit 1
+    fi
+    echo "  Webhook endpoint not ready yet, retrying in 2s... (attempt $i/30)"
+    sleep 2
+done
+
 echo "ingress-nginx installed successfully"
