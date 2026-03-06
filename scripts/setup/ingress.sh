@@ -71,12 +71,29 @@ echo "  Namespace:     $NAMESPACE"
 echo "  Release Name:  $RELEASE_NAME"
 echo "  Chart Path:    $CHART_PATH"
 
-helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
-    --namespace "$NAMESPACE" \
-    --create-namespace \
-    --set ingress.enabled=true \
-    --set ingress.className="$INGRESS_CLASS" \
-    --set replicaCount="$REPLICA_COUNT"
+# Retry helm install to handle transient webhook readiness issues.
+# The ingress-nginx admission webhook Service can take a few extra seconds
+# for kube-proxy iptables rules to propagate even after the controller pod
+# is Ready, causing "connection refused" on the first attempt.
+HELM_INSTALLED=false
+for attempt in $(seq 1 5); do
+    if helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
+        --namespace "$NAMESPACE" \
+        --create-namespace \
+        --set ingress.enabled=true \
+        --set ingress.className="$INGRESS_CLASS" \
+        --set replicaCount="$REPLICA_COUNT"; then
+        HELM_INSTALLED=true
+        break
+    fi
+    echo "Helm install attempt $attempt/5 failed, retrying in 5s..."
+    sleep 5
+done
+
+if [ "$HELM_INSTALLED" = false ]; then
+    echo "ERROR: Helm install failed after 5 attempts"
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Wait for Ingress resource to be created by Helm

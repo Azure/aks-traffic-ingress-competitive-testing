@@ -111,23 +111,46 @@ for i in {1..30}; do
 done
 
 # ---------------------------------------------------------------------------
-# Wait for Gateway to be programmed
+# Wait for Gateway to be ready
 # ---------------------------------------------------------------------------
 
-# The Gateway controller populates .status once it has processed the resource.
-# In environments without a Gateway API controller (e.g. a plain Kind cluster)
-# the status will never be set — we treat that as a warning, not a hard failure,
-# so the script stays usable for basic deployment validation.
+# In cloud environments the Gateway reaches Programmed=True once a LoadBalancer
+# address is assigned. In Kind there is no LoadBalancer so Programmed stays
+# False even though the Gateway is fully functional. We check for either:
+#   - Programmed=True (cloud / LoadBalancer environments), or
+#   - The gateway service exists with a port and the listener is programmed (Kind / bare-metal)
 
-echo "Checking Gateway programming status..."
-gateway_programmed=""
+echo "Checking Gateway status..."
+gateway_ready=""
 for i in {1..60}; do
+    # Check if the Gateway is fully programmed (cloud environments)
     gateway_programmed=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
         -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null || echo "")
     if [ "$gateway_programmed" = "True" ]; then
         echo "✓ Gateway is programmed"
+        gateway_ready="true"
         break
     fi
+
+    # Check if the gateway service exists with the listener port and the
+    # listener is programmed. Istio names the auto-created service
+    # "{gateway}-istio". The service has multiple ports (e.g. 15021 for health
+    # checks) — we check specifically for the gateway listener port.
+    # In Kind the service type is LoadBalancer (pending) but the port is still
+    # reachable via the cluster — so having the correct port + a programmed
+    # listener is sufficient to consider the gateway ready.
+    listener_port=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
+        -o jsonpath='{.spec.listeners[?(@.name=="http")].port}' 2>/dev/null || echo "")
+    gateway_svc_port=$(kubectl get svc "${RELEASE_NAME}-istio" -n "$NAMESPACE" \
+        -o jsonpath="{.spec.ports[?(@.port==${listener_port:-0})].port}" 2>/dev/null || echo "")
+    listener_programmed=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
+        -o jsonpath='{.status.listeners[0].conditions[?(@.type=="Programmed")].status}' 2>/dev/null || echo "")
+    if [ -n "$gateway_svc_port" ] && [ "$listener_programmed" = "True" ]; then
+        echo "✓ Gateway service ${RELEASE_NAME}-istio has port $gateway_svc_port and listener is programmed"
+        gateway_ready="true"
+        break
+    fi
+
     # If status field is completely empty the controller may not be installed
     gateway_status=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
         -o jsonpath='{.status}' 2>/dev/null || echo "")
@@ -136,14 +159,15 @@ for i in {1..60}; do
         echo "Skipping Gateway status checks"
         break
     fi
-    echo "Waiting for Gateway to be programmed... (attempt $i/60)"
+
+    echo "Waiting for Gateway to be ready... (attempt $i/60)"
     sleep 5
 done
 
 echo "Gateway configuration:"
 kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE"
 
-if [ "$gateway_programmed" = "True" ]; then
+if [ "$gateway_ready" = "true" ]; then
     # ---------------------------------------------------------------------------
     # Wait for HTTPRoute to be accepted and resolved (only if controller is active)
     # ---------------------------------------------------------------------------
