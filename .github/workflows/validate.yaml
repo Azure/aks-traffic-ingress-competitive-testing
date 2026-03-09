@@ -141,12 +141,12 @@ jobs:
             --output-file ./results/basic_rps.json
 
           echo "Checking for 200 responses"
-          STATUS_200_COUNT=$(cat ./results/basic_rps.json | head -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+          STATUS_200_COUNT=$(cat ./results/basic_rps.json | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
           if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
             echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
           else
             echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            cat ./results/basic_rps.json | head -n 1
+            cat ./results/basic_rps.json | tail -n 1
             exit 1
           fi
 
@@ -164,12 +164,12 @@ jobs:
             --output-file ./results/restarting_backend_rps.json
 
           echo "Checking for 200 responses"
-          STATUS_200_COUNT=$(cat ./results/restarting_backend_rps.json | head -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+          STATUS_200_COUNT=$(cat ./results/restarting_backend_rps.json | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
           if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
             echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
           else
             echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            cat ./results/restarting_backend_rps.json | head -n 1
+            cat ./results/restarting_backend_rps.json | tail -n 1
             exit 1
           fi
 
