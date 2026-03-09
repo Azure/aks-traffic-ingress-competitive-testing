@@ -105,9 +105,14 @@ jobs:
           ./modules/${{ matrix.module }}/test/test.sh
 
   test-scenarios:
-    name: Test Scenarios
+    name: Test ${{ matrix.traffic }}/${{ matrix.scenario }}
     runs-on: ubuntu-latest
     needs: [test-modules, start-status]
+    strategy:
+      matrix:
+        traffic: [ingress, gateway]
+        scenario: [basic-rps, restarting-backend-rps]
+      fail-fast: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -129,51 +134,30 @@ jobs:
           bash -n scripts/scenarios/restarting_backend_rps.sh
           echo "✓ restarting_backend_rps.sh syntax check passed"
 
-      - name: Run basic RPS scenario via master script
+      - name: Run ${{ matrix.traffic }}/${{ matrix.scenario }} scenario
         run: |
+          OUTPUT_FILE="./results/${{ matrix.traffic }}_${{ matrix.scenario }}.json"
+
           chmod +x ./scripts/master.sh
           ./scripts/master.sh \
-            --traffic ingress \
-            --scenario basic-rps \
+            --traffic ${{ matrix.traffic }} \
+            --scenario ${{ matrix.scenario }} \
             --rate 50 \
             --duration 30s \
             --workers 10 \
-            --output-file ./results/basic_rps.json
+            --output-file "$OUTPUT_FILE"
 
           echo "Checking for 200 responses"
-          STATUS_200_COUNT=$(cat ./results/basic_rps.json | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+          STATUS_200_COUNT=$(cat "$OUTPUT_FILE" | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
           if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
             echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
           else
             echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            cat ./results/basic_rps.json | tail -n 1
+            cat "$OUTPUT_FILE" | tail -n 1
             exit 1
           fi
 
-          echo "✓ Basic RPS scenario executed successfully"
-
-      - name: Run restarting backend RPS scenario via master script
-        run: |
-          chmod +x ./scripts/master.sh
-          ./scripts/master.sh \
-            --traffic ingress \
-            --scenario restarting-backend-rps \
-            --rate 50 \
-            --duration 30s \
-            --workers 10 \
-            --output-file ./results/restarting_backend_rps.json
-
-          echo "Checking for 200 responses"
-          STATUS_200_COUNT=$(cat ./results/restarting_backend_rps.json | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
-          if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
-            echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
-          else
-            echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            cat ./results/restarting_backend_rps.json | tail -n 1
-            exit 1
-          fi
-
-          echo "✓ Restarting backend RPS scenario executed successfully"
+          echo "✓ ${{ matrix.traffic }}/${{ matrix.scenario }} scenario executed successfully"
 
   validate-structure:
     name: Validate Project Structure
