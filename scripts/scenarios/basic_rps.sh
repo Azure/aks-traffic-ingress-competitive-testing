@@ -7,27 +7,26 @@ show_usage() {
     echo "Usage: Set environment variables and run the script"
     echo ""
     echo "Required environment variables:"
-    echo "  INGRESS_CLASS: The ingress class to test (e.g., nginx, traefik, istio)"
     echo "  INGRESS_URL: The URL to send requests to (e.g., http://example.com)"
-    echo "  RATE: The rate of requests per second (e.g., 50)"
-    echo "  DURATION: The duration of the test (e.g., 30s)"
-    echo "  WORKERS: The number of worker processes to use (e.g., 10)"
-    echo "  REPLICA_COUNT: The number of replicas for the server deployment (e.g., 3)"
-    echo "  OUTPUT_FILE: The file to save the test results (e.g., ./scenarios/results/basic_rps.json)"
+    echo ""
+    echo "Optional environment variables:"
+    echo "  RATE: The rate of requests per second (default: 50)"
+    echo "  DURATION: The duration of the test (default: 30s)"
+    echo "  WORKERS: The number of worker processes to use (default: 10)"
+    echo "  OUTPUT_FILE: The file to save the test results (default: ./results/basic_rps.json)"
+    echo "  REQUEST_HEADERS: Additional request headers"
     echo ""
     echo "Example:"
-    echo "  INGRESS_CLASS=nginx INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 REPLICA_COUNT=3 OUTPUT_FILE=./scenarios/results/basic_rps.json $0"
+    echo "  INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 OUTPUT_FILE=./results/basic_rps.json $0"
     exit 1
 }
 
 # Set defaults if not provided
-INGRESS_CLASS=${INGRESS_CLASS:-"nginx"}
 INGRESS_URL=${INGRESS_URL:-""}
 RATE=${RATE:-"50"}
 DURATION=${DURATION:-"30s"}
 WORKERS=${WORKERS:-"10"}
-REPLICA_COUNT=${REPLICA_COUNT:-"3"}
-OUTPUT_FILE=${OUTPUT_FILE:-"./scenarios/results/basic_rps.json"}
+OUTPUT_FILE=${OUTPUT_FILE:-"./results/basic_rps.json"}
 REQUEST_HEADERS=${REQUEST_HEADERS:-""}
 
 # Validate required parameters
@@ -40,34 +39,16 @@ if [ ${#missing_params[@]} -gt 0 ]; then
 fi
 
 echo "Starting basic RPS test with:"
-echo "  Ingress Class: $INGRESS_CLASS"
 echo "  Ingress URL: $INGRESS_URL"
 echo "  Rate: $RATE"
 echo "  Duration: $DURATION"
 echo "  Workers: $WORKERS"
-echo "  Replica Count: $REPLICA_COUNT"
 echo "  Output File: $OUTPUT_FILE"
 echo "  Request Headers: $REQUEST_HEADERS"
 
 echo "Install dependencies..."
 chmod +x ./modules/vegeta/install/install.sh
 ./modules/vegeta/install/install.sh
-
-echo "Applying manifests..."
-if [ "${SKIP_HELM_DEPLOYMENT:-false}" = "True" ]; then
-    echo "Skipping Helm deployment"
-else
-    helm upgrade --install server ./charts/server \
-        --namespace server \
-        --create-namespace \
-        --set ingress.enabled=true \
-        --set ingress.className=$INGRESS_CLASS \
-        --set replicaCount=$REPLICA_COUNT \
-        --wait
-fi
-
-# just sleep for a bit to ensure everything is ready, add some better health and liveness checks to server in future
-sleep 5s
 
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh

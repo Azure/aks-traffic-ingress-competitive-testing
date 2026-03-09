@@ -105,9 +105,14 @@ jobs:
           ./modules/${{ matrix.module }}/test/test.sh
 
   test-scenarios:
-    name: Test Scenarios
+    name: Test ${{ matrix.traffic }}/${{ matrix.scenario }}
     runs-on: ubuntu-latest
     needs: [test-modules, start-status]
+    strategy:
+      matrix:
+        traffic: [ingress, gateway]
+        scenario: [basic-rps, restarting-backend-rps]
+      fail-fast: false
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -122,96 +127,37 @@ jobs:
           # Install Helm
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-
-      - name: Test basic RPS scenario syntax
+      - name: Test scenario script syntax
         run: |
-          # Basic syntax check for the scenario script
-          bash -n scenarios/basic_rps.sh
+          bash -n scripts/scenarios/basic_rps.sh
           echo "✓ basic_rps.sh syntax check passed"
-
-      - name: Run basic RPS scenario
-        run: |
-          echo "Installing Kind"
-          chmod +x ./modules/kind/install/install.sh
-
-          echo "Creating Kind cluster"
-          chmod +x ./modules/kind/run/run.sh
-          ./modules/kind/run/run.sh
-
-          echo "Get outputs from cluster"
-          chmod +x ./modules/kind/output/output.sh
-          INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
-          INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
-
-          echo "Running basic RPS scenario with environment variables"
-          chmod +x scenarios/basic_rps.sh
-          export INGRESS_CLASS="$INGRESS_CLASS"
-          export INGRESS_URL="$INGRESS_URL"
-          export RATE="50"
-          export DURATION="30s"
-          export WORKERS="10"
-          export REPLICA_COUNT="3"
-          export OUTPUT_FILE="./scenarios/results/basic_rps.json"
-
-          ./scenarios/basic_rps.sh
-
-          echo "checking for 200 responses"
-          chmod +x ./modules/vegeta/output/output.sh
-          STATUS_200_COUNT=$(./modules/vegeta/output/output.sh | head -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
-          if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
-            echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
-          else
-            echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            ./modules/vegeta/output/output.sh | head -n 1
-            exit 1
-          fi
-
-          echo "✓ Basic RPS scenario executed successfully"
-
-      - name: Test restarting backend RPS scenario syntax
-        run: |
-          # Basic syntax check for the scenario script
-          bash -n scenarios/restarting_backend_rps.sh
+          bash -n scripts/scenarios/restarting_backend_rps.sh
           echo "✓ restarting_backend_rps.sh syntax check passed"
 
-      - name: Run restarting backend RPS scenario
+      - name: Run ${{ matrix.traffic }}/${{ matrix.scenario }} scenario
         run: |
-          echo "Installing Kind"
-          chmod +x ./modules/kind/install/install.sh
+          OUTPUT_FILE="./results/${{ matrix.traffic }}_${{ matrix.scenario }}.json"
 
-          echo "Creating Kind cluster"
-          chmod +x ./modules/kind/run/run.sh
-          ./modules/kind/run/run.sh
+          chmod +x ./scripts/master.sh
+          ./scripts/master.sh \
+            --traffic ${{ matrix.traffic }} \
+            --scenario ${{ matrix.scenario }} \
+            --rate 50 \
+            --duration 30s \
+            --workers 10 \
+            --output-file "$OUTPUT_FILE"
 
-          echo "Get outputs from cluster"
-          chmod +x ./modules/kind/output/output.sh
-          INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
-          INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
-
-          echo "Running restarting backend RPS scenario with environment variables"
-          chmod +x scenarios/restarting_backend_rps.sh
-          export INGRESS_CLASS="$INGRESS_CLASS"
-          export INGRESS_URL="$INGRESS_URL"
-          export RATE="50"
-          export DURATION="30s"
-          export WORKERS="10"
-          export REPLICA_COUNT="5"
-          export OUTPUT_FILE="./scenarios/results/restarting_backend_rps.json"
-
-          ./scenarios/restarting_backend_rps.sh
-
-          echo "checking for 200 responses"
-          chmod +x ./modules/vegeta/output/output.sh
-          STATUS_200_COUNT=$(./modules/vegeta/output/output.sh | head -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
+          echo "Checking for 200 responses"
+          STATUS_200_COUNT=$(cat "$OUTPUT_FILE" | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
           if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
             echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
           else
             echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            ./modules/vegeta/output/output.sh | head -n 1
+            cat "$OUTPUT_FILE" | tail -n 1
             exit 1
           fi
 
-          echo "✓ Restarting backend RPS scenario executed successfully"
+          echo "✓ ${{ matrix.traffic }}/${{ matrix.scenario }} scenario executed successfully"
 
   validate-structure:
     name: Validate Project Structure
@@ -280,6 +226,10 @@ jobs:
           echo "Creating Kind cluster"
           chmod +x ./modules/kind/run/run.sh
           ./modules/kind/run/run.sh
+
+          echo "Installing ingress-nginx"
+          chmod +x ./scripts/install/nginx.sh
+          ./scripts/install/nginx.sh
 
       - name: Validate charts
         run: |

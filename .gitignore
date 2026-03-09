@@ -7,7 +7,10 @@
 statefile.json
 
 # stores results for scenarios
-scenarios/results
+results/
+
+# Istio download directory (created by scripts/install/istio.sh)
+istio-*/
 
 # User-specific files
 *.rsuser

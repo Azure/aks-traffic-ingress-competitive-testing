@@ -5,16 +5,16 @@ set -e
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 statefile="${filepath}/../statefile.json"
 
-function ingress_class() {
-    jq -r '.ingress_class' "${statefile}" || {
-        echo "Error: Could not retrieve ingress class from state file."
+function cluster_name() {
+    jq -r '.cluster_name' "${statefile}" || {
+        echo "Error: Could not retrieve cluster name from state file."
         exit 1
     }
 }
 
-function ingress_url() {
-    jq -r '.ingress_url' "${statefile}" || {
-        echo "Error: Could not retrieve ingress URL from state file."
+function host_port() {
+    jq -r '.host_port' "${statefile}" || {
+        echo "Error: Could not retrieve host port from state file."
         exit 1
     }
 }

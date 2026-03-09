@@ -68,12 +68,6 @@ kubectl get nodes --no-headers | grep -q "Ready" || {
     exit 1
 }
 
-# Test ingress-nginx installation
-kubectl get pods -n ingress-nginx --no-headers | grep -q "Running" || {
-    echo "ERROR: ingress-nginx pods are not running"
-    exit 1
-}
-
 echo "✓ Cluster functionality test passed"
 
 echo "5. Testing state file creation..."
@@ -89,13 +83,8 @@ if ! jq -e '.cluster_name' "${STATEFILE}" &>/dev/null; then
     exit 1
 fi
 
-if ! jq -e '.ingress_class' "${STATEFILE}" &>/dev/null; then
-    echo "ERROR: State file does not contain ingress_class"
-    exit 1
-fi
-
-if ! jq -e '.ingress_url' "${STATEFILE}" &>/dev/null; then
-    echo "ERROR: State file does not contain ingress_url"
+if ! jq -e '.host_port' "${STATEFILE}" &>/dev/null; then
+    echo "ERROR: State file does not contain host_port"
     exit 1
 fi
 
@@ -104,17 +93,17 @@ echo "✓ State file creation test passed"
 echo "6. Testing output functions..."
 chmod +x "${MODULE_DIR}/output/output.sh"
 
-# Test ingress_class output
-INGRESS_CLASS=$("${MODULE_DIR}/output/output.sh" ingress_class)
-if [[ "${INGRESS_CLASS}" != "nginx" ]]; then
-    echo "ERROR: Expected ingress_class 'nginx', got '${INGRESS_CLASS}'"
+# Test cluster_name output
+CLUSTER_NAME_OUTPUT=$("${MODULE_DIR}/output/output.sh" cluster_name)
+if [[ "${CLUSTER_NAME_OUTPUT}" != "${TEST_CLUSTER_NAME}" ]]; then
+    echo "ERROR: Expected cluster_name '${TEST_CLUSTER_NAME}', got '${CLUSTER_NAME_OUTPUT}'"
     exit 1
 fi
 
-# Test ingress_url output
-INGRESS_URL=$("${MODULE_DIR}/output/output.sh" ingress_url)
-if [[ ! "${INGRESS_URL}" =~ ^http://localhost:[0-9]+$ ]]; then
-    echo "ERROR: Expected ingress_url to match 'http://localhost:PORT', got '${INGRESS_URL}'"
+# Test host_port output
+HOST_PORT=$("${MODULE_DIR}/output/output.sh" host_port)
+if [[ ! "${HOST_PORT}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: Expected host_port to be a number, got '${HOST_PORT}'"
     exit 1
 fi
 
