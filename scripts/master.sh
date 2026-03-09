@@ -5,7 +5,7 @@
 #   2. Install vegeta
 #   3. Install a traffic controller (nginx or istio)
 #   4. Deploy the server via Helm (ingress or gateway)
-#   5. Build the ingress URL
+#   5. Build the ingress URL and wait for it to serve traffic
 #   6. Run a scenario
 #   7. Delete the Kind cluster
 #
@@ -245,12 +245,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5: Build ingress URL
+# Step 5: Determine ingress URL and wait for it to serve traffic
 # ---------------------------------------------------------------------------
 
 echo ""
 echo "============================================================"
-echo "Step 5: Determining ingress URL"
+echo "Step 5: Determining ingress URL and waiting for readiness"
 echo "============================================================"
 
 # Read the host port from the Kind state file
@@ -282,6 +282,29 @@ else
 fi
 
 echo "Ingress URL: $INGRESS_URL"
+
+echo "Probing $INGRESS_URL until we get an HTTP 200 response..."
+READY=false
+for i in $(seq 1 60); do
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "$INGRESS_URL" 2>/dev/null || echo "000")
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo "✓ Ingress is ready — received HTTP 200 on attempt $i"
+        READY=true
+        break
+    fi
+    echo "  Attempt $i/60: HTTP $HTTP_CODE — retrying in 2s..."
+    sleep 2
+done
+
+if [ "$READY" = false ]; then
+    echo "ERROR: Ingress did not return HTTP 200 after 120 seconds"
+    echo "Last HTTP status code: $HTTP_CODE"
+    echo "Debugging info:"
+    kubectl get pods -A
+    kubectl get ingress -A
+    curl -v "$INGRESS_URL" 2>&1 || true
+    exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Step 6: Run scenario
