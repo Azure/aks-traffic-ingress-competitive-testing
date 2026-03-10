@@ -2,12 +2,11 @@
 
 # Master script that orchestrates the full test pipeline:
 #   1. Create a Kind cluster
-#   2. Install vegeta
-#   3. Install a traffic controller (nginx or istio)
-#   4. Deploy the server via Helm (ingress or gateway)
-#   5. Build the ingress URL and wait for it to serve traffic
-#   6. Run a scenario
-#   7. Delete the Kind cluster
+#   2. Install a traffic controller (nginx or istio)
+#   3. Deploy the server via Helm (ingress or gateway)
+#   4. Build the ingress URL and wait for it to serve traffic
+#   5. Run a scenario
+#   6. Delete the Kind cluster
 #
 # This script expects to be run from the root directory of this project.
 
@@ -195,24 +194,12 @@ chmod +x ./modules/kind/run/run.sh
 ./modules/kind/run/run.sh "$CLUSTER_NAME"
 
 # ---------------------------------------------------------------------------
-# Step 2: Install vegeta
+# Step 2: Install traffic controller
 # ---------------------------------------------------------------------------
 
 echo ""
 echo "============================================================"
-echo "Step 2: Installing vegeta"
-echo "============================================================"
-
-chmod +x ./modules/vegeta/install/install.sh
-./modules/vegeta/install/install.sh
-
-# ---------------------------------------------------------------------------
-# Step 3: Install traffic controller
-# ---------------------------------------------------------------------------
-
-echo ""
-echo "============================================================"
-echo "Step 3: Installing traffic controller"
+echo "Step 2: Installing traffic controller"
 echo "============================================================"
 
 if [ "$TRAFFIC" = "ingress" ]; then
@@ -224,12 +211,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 4: Deploy server via Helm
+# Step 3: Deploy server via Helm
 # ---------------------------------------------------------------------------
 
 echo ""
 echo "============================================================"
-echo "Step 4: Deploying server"
+echo "Step 3: Deploying server"
 echo "============================================================"
 
 if [ "$TRAFFIC" = "ingress" ]; then
@@ -245,12 +232,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5: Determine ingress URL and wait for it to serve traffic
+# Step 4: Determine ingress URL and wait for it to serve traffic
 # ---------------------------------------------------------------------------
 
 echo ""
 echo "============================================================"
-echo "Step 5: Determining ingress URL and waiting for readiness"
+echo "Step 4: Determining ingress URL and waiting for readiness"
 echo "============================================================"
 
 # Read the host port from the Kind state file
@@ -307,22 +294,21 @@ if [ "$READY" = false ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 6: Run scenario
+# Step 5: Run scenario
 # ---------------------------------------------------------------------------
 
 echo ""
 echo "============================================================"
-echo "Step 6: Running scenario: $SCENARIO"
+echo "Step 5: Running scenario: $SCENARIO"
 echo "============================================================"
 
-export INGRESS_URL="$INGRESS_URL"
-export RATE="$RATE"
-export DURATION="$DURATION"
-export WORKERS="$WORKERS"
-export OUTPUT_FILE="$OUTPUT_FILE"
-
 chmod +x "$SCENARIO_SCRIPT"
-"$SCENARIO_SCRIPT"
+"$SCENARIO_SCRIPT" \
+    --ingress-url "$INGRESS_URL" \
+    --rate "$RATE" \
+    --duration "$DURATION" \
+    --workers "$WORKERS" \
+    --output-file "$OUTPUT_FILE"
 
 # ---------------------------------------------------------------------------
 # Done — cleanup is handled by the EXIT trap
