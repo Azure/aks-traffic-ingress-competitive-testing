@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scenarios now accept CLI arguments (`--ingress-url`, `--rate`, `--duration`, `--workers`, `--output-file`, `--request-headers`) instead of requiring environment variables; env vars are still supported as defaults for backward compatibility
 - Vegeta installation is now handled by the scenario scripts themselves rather than a separate step in master.sh
 - Dockerfile updated: fixed broken `scenarios/*.sh` glob, replaced with `find`-based chmod, updated entrypoint for new script locations
+- CI validation now sums HTTP 200 counts across all output intervals instead of checking only the last line, preventing false failures when a pod rollout is in progress at the end of a test
 
 ### Fixed
 

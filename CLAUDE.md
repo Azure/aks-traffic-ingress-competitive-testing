@@ -91,7 +91,7 @@ Scenarios accept CLI arguments (`--ingress-url`, `--rate`, `--duration`, `--work
 
 ### Data flow for results
 
-Vegeta attack → `vegeta encode` → `jaggr` (aggregates per-second) → `tee` to `modules/vegeta/statefile.json`. The scenario script then copies statefile content to the `--output-file`. The result file contains **one JSON line per second** of the test. The CI validation reads the **last line** (`tail -n 1`) to check for HTTP 200 responses.
+Vegeta attack → `vegeta encode` → `jaggr` (aggregates per-second) → `tee` to `modules/vegeta/statefile.json`. The scenario script then copies statefile content to the `--output-file`. The result file contains **one JSON line per second** of the test. The CI validation sums `code.hist["200"]` across **all lines** and fails only if the total is zero (i.e., no connection was ever successfully routed).
 
 ### Helm chart (charts/server)
 
