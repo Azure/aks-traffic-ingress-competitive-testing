@@ -4,24 +4,27 @@ set -ex
 
 # Function to show usage
 show_usage() {
-    echo "Usage: Set environment variables and run the script"
+    echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Required environment variables:"
-    echo "  INGRESS_URL: The URL to send requests to (e.g., http://example.com)"
+    echo "Runs a basic RPS load test against an ingress URL."
     echo ""
-    echo "Optional environment variables:"
-    echo "  RATE: The rate of requests per second (default: 50)"
-    echo "  DURATION: The duration of the test (default: 30s)"
-    echo "  WORKERS: The number of worker processes to use (default: 10)"
-    echo "  OUTPUT_FILE: The file to save the test results (default: ./results/basic_rps.json)"
-    echo "  REQUEST_HEADERS: Additional request headers"
+    echo "Required:"
+    echo "  --ingress-url       The URL to send requests to (e.g., http://localhost:8080)"
+    echo ""
+    echo "Optional:"
+    echo "  --rate              The rate of requests per second (default: 50)"
+    echo "  --duration          The duration of the test (default: 30s)"
+    echo "  --workers           The number of worker processes to use (default: 10)"
+    echo "  --output-file       The file to save the test results (default: ./results/basic_rps.json)"
+    echo "  --request-headers   Additional request headers"
+    echo "  -h, --help          Show this help message"
     echo ""
     echo "Example:"
-    echo "  INGRESS_URL=http://localhost:8080 RATE=50 DURATION=30s WORKERS=10 OUTPUT_FILE=./results/basic_rps.json $0"
+    echo "  $0 --ingress-url http://localhost:8080 --rate 50 --duration 30s --workers 10"
     exit 1
 }
 
-# Set defaults if not provided
+# Defaults (env vars supported for backward compatibility)
 INGRESS_URL=${INGRESS_URL:-""}
 RATE=${RATE:-"50"}
 DURATION=${DURATION:-"30s"}
@@ -29,12 +32,46 @@ WORKERS=${WORKERS:-"10"}
 OUTPUT_FILE=${OUTPUT_FILE:-"./results/basic_rps.json"}
 REQUEST_HEADERS=${REQUEST_HEADERS:-""}
 
-# Validate required parameters
-missing_params=()
-[ -z "$INGRESS_URL" ] && missing_params+=("INGRESS_URL")
+# Parse arguments (override env vars if provided)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ingress-url)
+            INGRESS_URL="$2"
+            shift 2
+            ;;
+        --rate)
+            RATE="$2"
+            shift 2
+            ;;
+        --duration)
+            DURATION="$2"
+            shift 2
+            ;;
+        --workers)
+            WORKERS="$2"
+            shift 2
+            ;;
+        --output-file)
+            OUTPUT_FILE="$2"
+            shift 2
+            ;;
+        --request-headers)
+            REQUEST_HEADERS="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            ;;
+        *)
+            echo "Error: Unknown option: $1"
+            show_usage
+            ;;
+    esac
+done
 
-if [ ${#missing_params[@]} -gt 0 ]; then
-    echo "Error: Missing required environment variables: ${missing_params[*]}"
+# Validate required parameters
+if [ -z "$INGRESS_URL" ]; then
+    echo "Error: --ingress-url is required"
     show_usage
 fi
 
