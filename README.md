@@ -8,49 +8,44 @@ Note that this repo assumes that [kubectl](https://kubernetes.io/docs/tasks/tool
 
 We verify that scripts work locally before making changes and also add automated testing to ensure scripts work.
 
-For example, to ensure that the simple RPS is working locally we can use the following commands
+The `scripts/master.sh` script orchestrates the full test pipeline: creating a Kind cluster, installing tools, deploying the server, and running a scenario. To run a basic RPS test locally:
 
 ```bash
-echo "Installing cluster dependencies"
-chmod +x ./modules/kind/install/install.sh
-chmod +x ./modules/jplot/install/install.sh
-
-echo "Creating Kind cluster"
-chmod +x ./modules/kind/run/run.sh
-./modules/kind/run/run.sh
-
-echo "Get outputs from cluster"
-chmod +x ./modules/kind/output/output.sh
-INGRESS_CLASS=$(./modules/kind/output/output.sh ingress_class)
-INGRESS_URL=$(./modules/kind/output/output.sh ingress_url)
-
-echo "Running basic RPS scenario"
-chmod +x scenarios/basic_rps.sh
-export INGRESS_CLASS="$INGRESS_CLASS"
-export INGRESS_URL="$INGRESS_URL"
-export RATE="50"
-export DURATION="30s"
-export WORKERS="10"
-export REPLICA_COUNT="3"
-export OUTPUT_FILE="./scenarios/results/basic_rps.json"
-./scenarios/basic_rps.sh
-
-# To test out the restarting backend scenario, run these commands instead
-# echo "Running restarting backend RPS scenario"
-# chmod +x scenarios/restarting_backend_rps.sh
-# export INGRESS_CLASS="$INGRESS_CLASS"
-# export INGRESS_URL="$INGRESS_URL"
-# export RATE="50"
-# export DURATION="90s"
-# export WORKERS="10"
-# export REPLICA_COUNT="5"
-# export OUTPUT_FILE="./scenarios/results/restarting_backend_rps.json"
-# ./scenarios/restarting_backend_rps.sh
-
-chmod +x ./modules/vegeta/output/output.sh
-chmod +x ./modules/jplot/run/run.sh
-./modules/vegeta/output/output.sh | ./modules/jplot/run/run.sh vegeta
+chmod +x ./scripts/master.sh
+./scripts/master.sh \
+  --traffic ingress \
+  --scenario basic-rps \
+  --rate 50 \
+  --duration 30s \
+  --workers 10 \
+  --output-file ./results/basic_rps.json
 ```
+
+To test with the Gateway API (Istio) instead of Ingress (nginx):
+
+```bash
+./scripts/master.sh \
+  --traffic gateway \
+  --scenario basic-rps \
+  --rate 50 \
+  --duration 30s \
+  --workers 10 \
+  --output-file ./results/gateway_basic_rps.json
+```
+
+To run the restarting backend scenario:
+
+```bash
+./scripts/master.sh \
+  --traffic ingress \
+  --scenario restarting-backend-rps \
+  --rate 50 \
+  --duration 90s \
+  --workers 10 \
+  --output-file ./results/restarting_backend_rps.json
+```
+
+The master script handles cluster cleanup automatically on exit. Run `./scripts/master.sh --help` for all available options.
 
 ## Repository Structure
 
@@ -71,13 +66,17 @@ This repository is a collection of modules that follow consistent patterns to cr
 
 Note: all modules expect to be **run from the root directory of this project**.
 
+### /scripts
+
+[/scripts](./scripts/) contains the orchestration and setup scripts:
+- `master.sh` — the main entry point that runs the full test pipeline
+- `/install` — traffic controller install scripts (`nginx.sh`, `istio.sh`)
+- `/setup` — server deployment scripts with readiness checks (`ingress.sh`, `gateway.sh`)
+- `/scenarios` — load test scenario scripts. These assume the cluster, traffic controller, and server are already running. Their output is JSON so that consumers can decide on the final display format themselves.
+
 ### /server
 
 [/server](./server/) contains the files required to run a web server and containerize it. Learn more [here](./server/README.md).
-
-### /scenarios
-
-[/scenarios](./scenarios/) contains files that run tests. These scenarios assume that a Kubernetes cluster is set in the kubectl context. Their output is JSON so that consumers can decide on the final display format themselves.
 
 ## Release 
 
