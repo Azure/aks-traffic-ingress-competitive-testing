@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2026-03-10
+
+### Added
+
+- Docker entrypoint routing for all scripts: `master`, `scenario/<name>`, `install/<name>`, `setup/<name>`, and `module/<name>/<action>`
+
+### Changed
+
+- Scenarios now accept CLI arguments (`--ingress-url`, `--rate`, `--duration`, `--workers`, `--output-file`, `--request-headers`) instead of requiring environment variables; env vars are still supported as defaults for backward compatibility
+- Vegeta installation is now handled by the scenario scripts themselves rather than a separate step in master.sh
+- Dockerfile updated: fixed broken `scenarios/*.sh` glob, replaced with `find`-based chmod, updated entrypoint for new script locations
+- CI validation now sums HTTP 200 counts across all output intervals instead of checking only the last line, preventing false failures when a pod rollout is in progress at the end of a test
+
+### Fixed
+
+- Docker build failure caused by referencing removed `scenarios/` directory
+
 ## [0.0.4] - 2026-03-09
 
 ### Added
