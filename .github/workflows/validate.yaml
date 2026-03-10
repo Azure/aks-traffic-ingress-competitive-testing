@@ -148,12 +148,13 @@ jobs:
             --output-file "$OUTPUT_FILE"
 
           echo "Checking for 200 responses"
-          STATUS_200_COUNT=$(cat "$OUTPUT_FILE" | tail -n 1 | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
-          if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
-            echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
+          TOTAL_200_COUNT=$(jq -r '.code.hist["200"] // 0' "$OUTPUT_FILE" | awk '{s+=$1} END {print s+0}')
+          if [[ "${TOTAL_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${TOTAL_200_COUNT}" -gt 0 ]]; then
+            echo "✓ Found ${TOTAL_200_COUNT} total successful HTTP 200 responses across all intervals"
           else
-            echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-            cat "$OUTPUT_FILE" | tail -n 1
+            echo "ERROR: No HTTP 200 responses found in any interval"
+            echo "Output file contents:"
+            cat "$OUTPUT_FILE"
             exit 1
           fi
 
