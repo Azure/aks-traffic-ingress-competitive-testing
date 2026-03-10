@@ -60,11 +60,10 @@ bash -n scripts/scenarios/restarting_backend_rps.sh
 `scripts/master.sh` is the single entry point that orchestrates these steps in order:
 
 1. **Kind cluster** — `modules/kind/install/install.sh` + `modules/kind/run/run.sh` create a cluster with `extraPortMappings` (port 8080→80)
-2. **Vegeta** — `modules/vegeta/install/install.sh` installs vegeta + jaggr
-3. **Traffic controller** — `scripts/install/nginx.sh` (Ingress) or `scripts/install/istio.sh` (Gateway API)
-4. **Server deployment** — `scripts/setup/ingress.sh` or `scripts/setup/gateway.sh` deploys `charts/server` via Helm with full readiness polling
-5. **URL + readiness** — reads `host_port` from Kind's statefile, constructs the URL, then curl-probes until HTTP 200
-6. **Scenario** — `scripts/scenarios/basic_rps.sh` or `scripts/scenarios/restarting_backend_rps.sh` runs vegeta via the vegeta module
+2. **Traffic controller** — `scripts/install/nginx.sh` (Ingress) or `scripts/install/istio.sh` (Gateway API)
+3. **Server deployment** — `scripts/setup/ingress.sh` or `scripts/setup/gateway.sh` deploys `charts/server` via Helm with full readiness polling
+4. **URL + readiness** — reads `host_port` from Kind's statefile, constructs the URL, then curl-probes until HTTP 200
+5. **Scenario** — `scripts/scenarios/basic_rps.sh` or `scripts/scenarios/restarting_backend_rps.sh` installs vegeta and runs load tests via the vegeta module
 
 ### Module pattern
 
@@ -75,6 +74,20 @@ Each module under `modules/` follows the same interface:
 - `test/test.sh` — integration test
 
 Modules communicate via **statefile.json** (one per module, gitignored in practice). The kind module writes `{"cluster_name": "...", "host_port": "..."}`. The vegeta module writes streaming jaggr JSON (one line per second of the test).
+
+### Docker entrypoint
+
+The Dockerfile entrypoint routes commands to scripts via prefix matching:
+- `master [args...]` → `scripts/master.sh`
+- `scenario/<name> [args...]` → `scripts/scenarios/<name>.sh`
+- `install/<name> [args...]` → `scripts/install/<name>.sh`
+- `setup/<name> [args...]` → `scripts/setup/<name>.sh`
+- `module/<name>/<action> [args...]` → `modules/<name>/<action>/<action>.sh`
+- `server` → starts the Go HTTP server
+
+### Scenario interface
+
+Scenarios accept CLI arguments (`--ingress-url`, `--rate`, `--duration`, `--workers`, `--output-file`, `--request-headers`). Environment variables with the same names (uppercased, underscored) are read as defaults for backward compatibility. Each scenario installs its own dependencies (vegeta).
 
 ### Data flow for results
 

@@ -47,6 +47,32 @@ To run the restarting backend scenario:
 
 The master script handles cluster cleanup automatically on exit. Run `./scripts/master.sh --help` for all available options.
 
+## Docker
+
+The Docker image provides access to all scripts via a routing entrypoint:
+
+```bash
+# Run the full test pipeline
+docker run <image> master --traffic ingress --scenario basic-rps
+
+# Run a scenario directly
+docker run <image> scenario/basic_rps --ingress-url http://localhost:8080 --rate 50 --duration 30s
+
+# Run install/setup scripts
+docker run <image> install/nginx
+docker run <image> setup/ingress --ingress-class nginx --replica-count 3
+
+# Run module scripts
+docker run <image> module/vegeta/install
+docker run <image> module/vegeta/run http://localhost:8080 50 30s 10
+docker run <image> module/kind/output host_port
+
+# Run the server
+docker run -p 3333:3333 <image> server
+```
+
+Run the image with no arguments to see all available commands.
+
 ## Repository Structure
 
 This repository is a collection of modules that follow consistent patterns to create a common framework for Ingress competitive testing.
