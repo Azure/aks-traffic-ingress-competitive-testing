@@ -62,7 +62,8 @@ WORKDIR /app
 COPY . .
 
 # Make all scripts executable
-RUN chmod +x modules/**/install/*.sh modules/**/run/*.sh modules/**/test/*.sh scenarios/*.sh
+RUN find modules -name "*.sh" -exec chmod +x {} + && \
+    find scripts -name "*.sh" -exec chmod +x {} +
 
 # Create sudoers file for the root user to avoid sudo errors
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/root && \
@@ -93,16 +94,83 @@ RUN printf '%s\n' \
     '#!/bin/bash' \
     'if [ $# -eq 0 ]; then' \
     '  echo "AKS Traffic Ingress Competitive Testing Environment"' \
-    '  echo "Available commands:"' \
-    '  echo "- Run scenario: docker run <image> basic_rps [args...]"' \
-    '  echo "- Run server: docker run <image> server"' \
-    '  echo "- Run custom command: docker run <image> bash -c \"your_command\""' \
+    '  echo ""' \
+    '  echo "Usage: docker run <image> <command> [args...]"' \
+    '  echo ""' \
+    '  echo "Commands:"' \
+    '  echo "  master [args...]                          Run the full test pipeline (scripts/master.sh)"' \
+    '  echo "  scenario/<name> [args...]                  Run a scenario (e.g. scenario/basic_rps)"' \
+    '  echo "  install/<name> [args...]                   Run an install script (e.g. install/nginx)"' \
+    '  echo "  setup/<name> [args...]                     Run a setup script (e.g. setup/ingress)"' \
+    '  echo "  module/<name>/<action> [args...]           Run a module script (e.g. module/vegeta/run)"' \
+    '  echo "  server                                     Start the HTTP server"' \
+    '  echo "  bash -c \"...\"                              Run a custom command"' \
+    '  echo ""' \
+    '  echo "Examples:"' \
+    '  echo "  docker run <image> master --traffic ingress --scenario basic-rps"' \
+    '  echo "  docker run <image> scenario/basic_rps --ingress-url http://localhost:8080 --rate 50"' \
+    '  echo "  docker run <image> install/nginx"' \
+    '  echo "  docker run <image> setup/ingress --ingress-class nginx --replica-count 3"' \
+    '  echo "  docker run <image> module/vegeta/install"' \
+    '  echo "  docker run <image> module/vegeta/run http://localhost:8080 50 30s 10"' \
+    '  echo "  docker run <image> module/kind/output host_port"' \
+    '  echo "  docker run -p 3333:3333 <image> server"' \
     'elif [ "$1" = "server" ]; then' \
     '  cd /app/server && ./server' \
-    'elif [ -f "/app/scenarios/$1.sh" ]; then' \
-    '  scenario_name="$1"' \
+    'elif [ "$1" = "master" ]; then' \
     '  shift' \
-    '  bash "/app/scenarios/${scenario_name}.sh" "$@"' \
+    '  exec bash /app/scripts/master.sh "$@"' \
+    'elif [[ "$1" == scenario/* ]]; then' \
+    '  name="${1#scenario/}"' \
+    '  shift' \
+    '  if [ -f "/app/scripts/scenarios/${name}.sh" ]; then' \
+    '    exec bash "/app/scripts/scenarios/${name}.sh" "$@"' \
+    '  else' \
+    '    echo "ERROR: Unknown scenario: ${name}"' \
+    '    echo "Available scenarios:"' \
+    '    ls /app/scripts/scenarios/*.sh 2>/dev/null | sed "s|/app/scripts/scenarios/||;s|\.sh||" | sed "s|^|  |"' \
+    '    exit 1' \
+    '  fi' \
+    'elif [[ "$1" == install/* ]]; then' \
+    '  name="${1#install/}"' \
+    '  shift' \
+    '  if [ -f "/app/scripts/install/${name}.sh" ]; then' \
+    '    exec bash "/app/scripts/install/${name}.sh" "$@"' \
+    '  else' \
+    '    echo "ERROR: Unknown install script: ${name}"' \
+    '    echo "Available install scripts:"' \
+    '    ls /app/scripts/install/*.sh 2>/dev/null | sed "s|/app/scripts/install/||;s|\.sh||" | sed "s|^|  |"' \
+    '    exit 1' \
+    '  fi' \
+    'elif [[ "$1" == setup/* ]]; then' \
+    '  name="${1#setup/}"' \
+    '  shift' \
+    '  if [ -f "/app/scripts/setup/${name}.sh" ]; then' \
+    '    exec bash "/app/scripts/setup/${name}.sh" "$@"' \
+    '  else' \
+    '    echo "ERROR: Unknown setup script: ${name}"' \
+    '    echo "Available setup scripts:"' \
+    '    ls /app/scripts/setup/*.sh 2>/dev/null | sed "s|/app/scripts/setup/||;s|\.sh||" | sed "s|^|  |"' \
+    '    exit 1' \
+    '  fi' \
+    'elif [[ "$1" == module/* ]]; then' \
+    '  path="${1#module/}"' \
+    '  module_name="${path%%/*}"' \
+    '  action="${path#*/}"' \
+    '  shift' \
+    '  script="/app/modules/${module_name}/${action}/${action}.sh"' \
+    '  if [ -f "$script" ]; then' \
+    '    exec bash "$script" "$@"' \
+    '  else' \
+    '    echo "ERROR: Unknown module script: module/${module_name}/${action}"' \
+    '    echo "Available modules and actions:"' \
+    '    for m in /app/modules/*/; do' \
+    '      mname=$(basename "$m")' \
+    '      actions=$(ls "$m"/*//*.sh 2>/dev/null | xargs -I{} basename $(dirname {}) | sort -u | tr "\\n" " ")' \
+    '      [ -n "$actions" ] && echo "  module/${mname}/{${actions}}"' \
+    '    done' \
+    '    exit 1' \
+    '  fi' \
     'else' \
     '  exec "$@"' \
     'fi' \
@@ -117,8 +185,22 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 CMD []
 
 # Usage examples in comments:
-# Run basic RPS scenario:
-# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing basic_rps
+# Run full pipeline:
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing master --traffic ingress --scenario basic-rps
+#
+# Run a scenario:
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing scenario/basic_rps --ingress-url http://localhost:8080 --rate 50
+#
+# Run an install script:
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing install/nginx
+#
+# Run a setup script:
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing setup/ingress --ingress-class nginx
+#
+# Run a module script:
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/vegeta/install
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/vegeta/run http://localhost:8080 50 30s 10
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/kind/output host_port
 #
 # Run the server:
 # docker run -p 3333:3333 ghcr.io/azure/aks-traffic-ingress-competitive-testing server
