@@ -89,14 +89,18 @@ chmod +x ./modules/vegeta/install/install.sh
 
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh
-VEGETA_ARGS=("$INGRESS_URL" "$RATE" "$DURATION")
+VEGETA_ARGS=(
+    --target-url "$INGRESS_URL"
+    --rate "$RATE"
+    --duration "$DURATION"
+)
 
 if [ -n "$WORKERS" ]; then
-    VEGETA_ARGS+=("$WORKERS")
+    VEGETA_ARGS+=(--workers "$WORKERS")
 fi
 
 if [ -n "$REQUEST_HEADERS" ]; then
-    VEGETA_ARGS+=("$REQUEST_HEADERS")
+    VEGETA_ARGS+=(--request-headers "$REQUEST_HEADERS")
 fi
 
 ./modules/vegeta/run/run.sh "${VEGETA_ARGS[@]}" &
