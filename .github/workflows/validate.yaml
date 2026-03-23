@@ -144,7 +144,6 @@ jobs:
             --scenario ${{ matrix.scenario }} \
             --rate 50 \
             --duration 30s \
-            --workers 10 \
             --output-file "$OUTPUT_FILE"
 
           echo "Checking for 200 responses"
