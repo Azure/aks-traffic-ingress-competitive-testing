@@ -55,7 +55,7 @@ show_usage() {
     echo "  --replica-count    Number of server replicas (default: 3)"
     echo "  --rate             Requests per second (default: 50)"
     echo "  --duration         Test duration (default: 30s)"
-    echo "  --workers          Number of vegeta workers (default: 10)"
+    echo "  --workers          Number of vegeta workers (optional; uses vegeta default if omitted)"
     echo "  --output-file      Path for test results JSON (default: auto-generated)"
     echo "  --cluster-name     Kind cluster name (default: kind-test-cluster)"
     echo "  -h, --help         Show this help message"
@@ -75,7 +75,7 @@ SCENARIO=""
 REPLICA_COUNT="3"
 RATE="50"
 DURATION="30s"
-WORKERS="10"
+WORKERS=""
 OUTPUT_FILE=""
 CLUSTER_NAME="kind-test-cluster"
 
@@ -173,7 +173,7 @@ echo "  Scenario:      $SCENARIO"
 echo "  Replica Count: $REPLICA_COUNT"
 echo "  Rate:          $RATE"
 echo "  Duration:      $DURATION"
-echo "  Workers:       $WORKERS"
+echo "  Workers:       ${WORKERS:-"(vegeta default)"}"
 echo "  Output File:   $OUTPUT_FILE"
 echo "  Cluster Name:  $CLUSTER_NAME"
 echo "============================================================"
@@ -303,12 +303,18 @@ echo "Step 5: Running scenario: $SCENARIO"
 echo "============================================================"
 
 chmod +x "$SCENARIO_SCRIPT"
-"$SCENARIO_SCRIPT" \
-    --ingress-url "$INGRESS_URL" \
-    --rate "$RATE" \
-    --duration "$DURATION" \
-    --workers "$WORKERS" \
+SCENARIO_ARGS=(
+    --ingress-url "$INGRESS_URL"
+    --rate "$RATE"
+    --duration "$DURATION"
     --output-file "$OUTPUT_FILE"
+)
+
+if [ -n "$WORKERS" ]; then
+    SCENARIO_ARGS+=(--workers "$WORKERS")
+fi
+
+"$SCENARIO_SCRIPT" "${SCENARIO_ARGS[@]}"
 
 # ---------------------------------------------------------------------------
 # Done — cleanup is handled by the EXIT trap
