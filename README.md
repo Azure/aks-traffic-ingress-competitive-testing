@@ -17,7 +17,6 @@ chmod +x ./scripts/master.sh
   --scenario basic-rps \
   --rate 50 \
   --duration 30s \
-  --workers 10 \
   --output-file ./results/basic_rps.json
 ```
 
@@ -29,7 +28,6 @@ To test with the Gateway API (Istio) instead of Ingress (nginx):
   --scenario basic-rps \
   --rate 50 \
   --duration 30s \
-  --workers 10 \
   --output-file ./results/gateway_basic_rps.json
 ```
 
@@ -41,7 +39,6 @@ To run the restarting backend scenario:
   --scenario restarting-backend-rps \
   --rate 50 \
   --duration 90s \
-  --workers 10 \
   --output-file ./results/restarting_backend_rps.json
 ```
 
@@ -64,7 +61,7 @@ docker run <image> setup/ingress --ingress-class nginx --replica-count 3
 
 # Run module scripts
 docker run <image> module/vegeta/install
-docker run <image> module/vegeta/run http://localhost:8080 50 30s 10
+docker run <image> module/vegeta/run http://localhost:8080 50 30s
 docker run <image> module/kind/output host_port
 
 # Run the server
