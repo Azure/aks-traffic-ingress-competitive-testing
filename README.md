@@ -61,7 +61,7 @@ docker run <image> setup/ingress --ingress-class nginx --replica-count 3
 
 # Run module scripts
 docker run <image> module/vegeta/install
-docker run <image> module/vegeta/run http://localhost:8080 50 30s
+docker run <image> module/vegeta/run --target-url http://localhost:8080 --rate 50 --duration 30s
 docker run <image> module/kind/output host_port
 
 # Run the server
