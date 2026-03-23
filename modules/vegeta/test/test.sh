@@ -15,18 +15,18 @@ TEST_CONTAINER_NAME="vegeta-test-server"
 # Cleanup function
 cleanup() {
     echo "Cleaning up test environment..."
-    
+
     # Stop and remove test container if running
     if docker ps -q -f name="${TEST_CONTAINER_NAME}" | grep -q .; then
         echo "Stopping test container..."
         docker stop "${TEST_CONTAINER_NAME}" > /dev/null 2>&1 || true
     fi
-    
+
     if docker ps -aq -f name="${TEST_CONTAINER_NAME}" | grep -q .; then
         echo "Removing test container..."
         docker rm "${TEST_CONTAINER_NAME}" > /dev/null 2>&1 || true
     fi
-    
+
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
 }
@@ -37,18 +37,18 @@ trap cleanup EXIT
 # Start a test HTTP server using Docker
 start_test_server() {
     echo "Starting test HTTP server on port ${TEST_PORT} using Docker..."
-    
+
     # Start the Docker container with the specified image
     docker run -d \
         --name "${TEST_CONTAINER_NAME}" \
         -p "${TEST_PORT}:${TEST_PORT}" \
         -e PORT="${TEST_PORT}" \
         ghcr.io/azure/aks-traffic-ingress-competitive-testing:8aba95806ff611e9939257e2c3c9f53b3af5f7a2 > /dev/null
-    
+
     # Wait for server to start
     echo "Waiting for server to start..."
     sleep 5
-    
+
     # Verify server is running
     for i in {1..10}; do
         if curl -s "http://localhost:${TEST_PORT}" > /dev/null; then
@@ -58,7 +58,7 @@ start_test_server() {
         echo "Waiting for server to respond... (attempt $i/10)"
         sleep 2
     done
-    
+
     echo "ERROR: Test server failed to start or respond"
     docker logs "${TEST_CONTAINER_NAME}" 2>&1 || true
     exit 1
@@ -102,7 +102,11 @@ chmod +x "${MODULE_DIR}/run/run.sh"
 
 # Test the run script with a short attack
 cd "${PROJECT_ROOT}"
-"${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 5 2s 2
+"${MODULE_DIR}/run/run.sh" \
+    --target-url "http://localhost:${TEST_PORT}" \
+    --rate 5 \
+    --duration 2s \
+    --workers 2
 
 # Verify statefile was created
 STATEFILE="${MODULE_DIR}/statefile.json"
@@ -158,7 +162,7 @@ echo "✓ Output script test passed"
 
 echo "7. Testing error handling..."
 # Test run script with missing parameters
-if "${MODULE_DIR}/run/run.sh" 2>/dev/null; then
+if "${MODULE_DIR}/run/run.sh" > /dev/null 2>&1; then
     echo "ERROR: Expected failure with missing parameters, but command succeeded"
     exit 1
 fi
@@ -167,12 +171,20 @@ echo "✓ Error handling test passed"
 
 echo "8. Testing different attack parameters..."
 # Test with different parameters
-"${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 10 1s 1
+"${MODULE_DIR}/run/run.sh" \
+    --target-url "http://localhost:${TEST_PORT}" \
+    --rate 10 \
+    --duration 1s \
+    --workers 1
 
 echo "✓ Parameter variation test passed"
 
-echo "9. Testing header-only invocation..."
-HEADER_ONLY_OUTPUT=$("${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 10 1s "X-Test-Header: header-only" 2>&1)
+echo "9. Testing header-only named invocation..."
+HEADER_ONLY_OUTPUT=$("${MODULE_DIR}/run/run.sh" \
+    --target-url "http://localhost:${TEST_PORT}" \
+    --rate 10 \
+    --duration 1s \
+    --request-headers "X-Test-Header: header-only" 2>&1)
 echo "Header-only output:"
 printf '%s\n' "${HEADER_ONLY_OUTPUT}"
 
@@ -184,7 +196,7 @@ if ! printf '%s\n' "${HEADER_ONLY_OUTPUT}" | grep -Fq -- '- Workers: (vegeta def
 fi
 
 if ! printf '%s\n' "${HEADER_ONLY_OUTPUT}" | grep -Fq -- '- Headers: X-Test-Header: header-only'; then
-    echo "ERROR: Expected header-only invocation to treat the 4th argument as headers"
+    echo "ERROR: Expected header-only invocation to preserve the headers value"
     echo "Command output:"
     echo "${HEADER_ONLY_OUTPUT}"
     exit 1
@@ -192,8 +204,13 @@ fi
 
 echo "✓ Header-only invocation test passed"
 
-echo "10. Testing workers plus headers invocation..."
-WORKERS_AND_HEADERS_OUTPUT=$("${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 10 1s 1 "X-Test-Header: with-workers" 2>&1)
+echo "10. Testing workers plus headers named invocation..."
+WORKERS_AND_HEADERS_OUTPUT=$("${MODULE_DIR}/run/run.sh" \
+    --target-url "http://localhost:${TEST_PORT}" \
+    --rate 10 \
+    --duration 1s \
+    --workers 1 \
+    --request-headers "X-Test-Header: with-workers" 2>&1)
 echo "Workers and headers output:"
 printf '%s\n' "${WORKERS_AND_HEADERS_OUTPUT}"
 
@@ -212,6 +229,29 @@ if ! printf '%s\n' "${WORKERS_AND_HEADERS_OUTPUT}" | grep -Fq -- '- Headers: X-T
 fi
 
 echo "✓ Workers plus headers invocation test passed"
+
+echo "11. Testing positional invocation failure..."
+set +e
+POSITIONAL_OUTPUT=$("${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 10 1s 1 2>&1)
+POSITIONAL_STATUS=$?
+set -e
+
+echo "Positional invocation output:"
+printf '%s\n' "${POSITIONAL_OUTPUT}"
+
+if [[ "${POSITIONAL_STATUS}" -eq 0 ]]; then
+    echo "ERROR: Expected old positional invocation to fail, but command succeeded"
+    exit 1
+fi
+
+if ! printf '%s\n' "${POSITIONAL_OUTPUT}" | grep -Fq -- 'Positional arguments are not supported.'; then
+    echo "ERROR: Expected positional invocation failure to explain that positional arguments are unsupported"
+    echo "Command output:"
+    echo "${POSITIONAL_OUTPUT}"
+    exit 1
+fi
+
+echo "✓ Positional invocation failure test passed"
 
 echo ""
 echo "🎉 All Vegeta module tests passed!"
