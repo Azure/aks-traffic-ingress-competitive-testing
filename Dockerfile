@@ -112,7 +112,7 @@ RUN printf '%s\n' \
     '  echo "  docker run <image> install/nginx"' \
     '  echo "  docker run <image> setup/ingress --ingress-class nginx --replica-count 3"' \
     '  echo "  docker run <image> module/vegeta/install"' \
-    '  echo "  docker run <image> module/vegeta/run http://localhost:8080 50 30s 10"' \
+    '  echo "  docker run <image> module/vegeta/run --target-url http://localhost:8080 --rate 50 --duration 30s"' \
     '  echo "  docker run <image> module/kind/output host_port"' \
     '  echo "  docker run -p 3333:3333 <image> server"' \
     'elif [ "$1" = "server" ]; then' \
@@ -199,7 +199,7 @@ CMD []
 #
 # Run a module script:
 # docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/vegeta/install
-# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/vegeta/run http://localhost:8080 50 30s 10
+# docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/vegeta/run --target-url http://localhost:8080 --rate 50 --duration 30s
 # docker run ghcr.io/azure/aks-traffic-ingress-competitive-testing module/kind/output host_port
 #
 # Run the server:

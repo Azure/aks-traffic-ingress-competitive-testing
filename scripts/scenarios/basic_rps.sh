@@ -14,13 +14,13 @@ show_usage() {
     echo "Optional:"
     echo "  --rate              The rate of requests per second (default: 50)"
     echo "  --duration          The duration of the test (default: 30s)"
-    echo "  --workers           The number of worker processes to use (default: 10)"
+    echo "  --workers           The number of worker processes to use (optional; uses vegeta default if omitted)"
     echo "  --output-file       The file to save the test results (default: ./results/basic_rps.json)"
     echo "  --request-headers   Additional request headers"
     echo "  -h, --help          Show this help message"
     echo ""
     echo "Example:"
-    echo "  $0 --ingress-url http://localhost:8080 --rate 50 --duration 30s --workers 10"
+    echo "  $0 --ingress-url http://localhost:8080 --rate 50 --duration 30s"
     exit 1
 }
 
@@ -28,7 +28,7 @@ show_usage() {
 INGRESS_URL=${INGRESS_URL:-""}
 RATE=${RATE:-"50"}
 DURATION=${DURATION:-"30s"}
-WORKERS=${WORKERS:-"10"}
+WORKERS=${WORKERS:-""}
 OUTPUT_FILE=${OUTPUT_FILE:-"./results/basic_rps.json"}
 REQUEST_HEADERS=${REQUEST_HEADERS:-""}
 
@@ -79,7 +79,7 @@ echo "Starting basic RPS test with:"
 echo "  Ingress URL: $INGRESS_URL"
 echo "  Rate: $RATE"
 echo "  Duration: $DURATION"
-echo "  Workers: $WORKERS"
+echo "  Workers: ${WORKERS:-"(vegeta default)"}"
 echo "  Output File: $OUTPUT_FILE"
 echo "  Request Headers: $REQUEST_HEADERS"
 
@@ -89,7 +89,21 @@ chmod +x ./modules/vegeta/install/install.sh
 
 echo "Running RPS test..."
 chmod +x ./modules/vegeta/run/run.sh
-./modules/vegeta/run/run.sh "$INGRESS_URL" "$RATE" "$DURATION" "$WORKERS" "$REQUEST_HEADERS"
+VEGETA_ARGS=(
+    --target-url "$INGRESS_URL"
+    --rate "$RATE"
+    --duration "$DURATION"
+)
+
+if [ -n "$WORKERS" ]; then
+    VEGETA_ARGS+=(--workers "$WORKERS")
+fi
+
+if [ -n "$REQUEST_HEADERS" ]; then
+    VEGETA_ARGS+=(--request-headers "$REQUEST_HEADERS")
+fi
+
+./modules/vegeta/run/run.sh "${VEGETA_ARGS[@]}"
 
 echo "Generating test results..."
 mkdir -p "$(dirname "${OUTPUT_FILE}")"

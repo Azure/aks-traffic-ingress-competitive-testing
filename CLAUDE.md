@@ -12,13 +12,13 @@ This is a load-testing framework for comparing Kubernetes ingress controllers (n
 
 ```bash
 # Ingress (nginx) + basic RPS
-./scripts/master.sh --traffic ingress --scenario basic-rps --rate 50 --duration 30s --workers 10 --output-file ./results/basic_rps.json
+./scripts/master.sh --traffic ingress --scenario basic-rps --rate 50 --duration 30s --output-file ./results/basic_rps.json
 
 # Gateway (istio) + basic RPS
-./scripts/master.sh --traffic gateway --scenario basic-rps --rate 50 --duration 30s --workers 10 --output-file ./results/gateway_basic_rps.json
+./scripts/master.sh --traffic gateway --scenario basic-rps --rate 50 --duration 30s --output-file ./results/gateway_basic_rps.json
 
 # Restarting backend scenario
-./scripts/master.sh --traffic ingress --scenario restarting-backend-rps --rate 50 --duration 90s --workers 10 --output-file ./results/restarting_backend_rps.json
+./scripts/master.sh --traffic ingress --scenario restarting-backend-rps --rate 50 --duration 90s --output-file ./results/restarting_backend_rps.json
 ```
 
 `master.sh` handles everything including cleanup (via EXIT trap). Requires kubectl, helm, jq, and curl on the host.
