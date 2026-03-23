@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] - 2026-03-23
+
+### Changed
+
+- The `--workers` flag is now optional in `scripts/master.sh` and the scenario scripts; when omitted, Vegeta uses its default worker scaling
+- `modules/vegeta/run/run.sh` now uses named flags (`--target-url`, `--rate`, `--duration`, `--workers`, `--request-headers`) instead of the old positional argument interface
+- Documentation and Docker examples were updated to show the named-flag Vegeta invocation format
+
 ## [0.0.5] - 2026-03-10
 
 ### Added
