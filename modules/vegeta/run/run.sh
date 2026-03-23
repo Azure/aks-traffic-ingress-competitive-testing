@@ -12,7 +12,14 @@ function run_vegeta_attack() {
     local target_url="${1}"
     if [ -z "$target_url" ]; then
         echo "Usage: $0 <target_url> [rate] [duration] [workers] [headers]"
-        echo "Example: ./modules/vegeta/run/run.sh http://localhost:8080 50 30s"
+        echo ""
+        echo "Examples:"
+        echo "  ./modules/vegeta/run/run.sh http://localhost:8080 50 30s"
+        echo "  ./modules/vegeta/run/run.sh http://localhost:8080 50 30s 20"
+        echo "  ./modules/vegeta/run/run.sh http://localhost:8080 50 30s \"X-Test-Header: header-only\""
+        echo "  ./modules/vegeta/run/run.sh http://localhost:8080 50 30s 20 \"X-Test-Header: with-workers\""
+        echo ""
+        echo "If workers is omitted, headers can be passed as the 4th argument."
         return 1
     fi
     local rate="${2:-50}"        # requests per second, default 50

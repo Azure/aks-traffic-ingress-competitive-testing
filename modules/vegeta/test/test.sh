@@ -171,5 +171,47 @@ echo "8. Testing different attack parameters..."
 
 echo "✓ Parameter variation test passed"
 
+echo "9. Testing header-only invocation..."
+HEADER_ONLY_OUTPUT=$("${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 10 1s "X-Test-Header: header-only" 2>&1)
+echo "Header-only output:"
+printf '%s\n' "${HEADER_ONLY_OUTPUT}"
+
+if ! printf '%s\n' "${HEADER_ONLY_OUTPUT}" | grep -Fq -- '- Workers: (vegeta default)'; then
+    echo "ERROR: Expected header-only invocation to use vegeta default workers"
+    echo "Command output:"
+    echo "${HEADER_ONLY_OUTPUT}"
+    exit 1
+fi
+
+if ! printf '%s\n' "${HEADER_ONLY_OUTPUT}" | grep -Fq -- '- Headers: X-Test-Header: header-only'; then
+    echo "ERROR: Expected header-only invocation to treat the 4th argument as headers"
+    echo "Command output:"
+    echo "${HEADER_ONLY_OUTPUT}"
+    exit 1
+fi
+
+echo "✓ Header-only invocation test passed"
+
+echo "10. Testing workers plus headers invocation..."
+WORKERS_AND_HEADERS_OUTPUT=$("${MODULE_DIR}/run/run.sh" "http://localhost:${TEST_PORT}" 10 1s 1 "X-Test-Header: with-workers" 2>&1)
+echo "Workers and headers output:"
+printf '%s\n' "${WORKERS_AND_HEADERS_OUTPUT}"
+
+if ! printf '%s\n' "${WORKERS_AND_HEADERS_OUTPUT}" | grep -Fq -- '- Workers: 1'; then
+    echo "ERROR: Expected workers plus headers invocation to preserve the explicit workers value"
+    echo "Command output:"
+    echo "${WORKERS_AND_HEADERS_OUTPUT}"
+    exit 1
+fi
+
+if ! printf '%s\n' "${WORKERS_AND_HEADERS_OUTPUT}" | grep -Fq -- '- Headers: X-Test-Header: with-workers'; then
+    echo "ERROR: Expected workers plus headers invocation to preserve the headers value"
+    echo "Command output:"
+    echo "${WORKERS_AND_HEADERS_OUTPUT}"
+    exit 1
+fi
+
+echo "✓ Workers plus headers invocation test passed"
+
 echo ""
 echo "🎉 All Vegeta module tests passed!"
