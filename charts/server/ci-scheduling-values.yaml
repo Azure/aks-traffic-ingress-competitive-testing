@@ -1,0 +1,5 @@
+tolerations:
+  - key: scheduling
+    operator: Equal
+    value: enabled
+    effect: NoSchedule
