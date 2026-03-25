@@ -12,16 +12,30 @@ show_usage() {
     echo "Deploys the server Helm chart with Gateway API enabled."
     echo ""
     echo "Options:"
-    echo "  --gateway-class    The gateway class name (default: istio)"
-    echo "  --replica-count    The number of server replicas (default: 3)"
-    echo "  --namespace        The Kubernetes namespace to deploy to (default: server)"
-    echo "  --release-name     The Helm release name (default: server)"
-    echo "  --chart-path       The path to the Helm chart (default: ./charts/server)"
-    echo "  -h, --help         Show this help message"
+    echo "  --gateway-class      The gateway class name (default: istio)"
+    echo "  --replica-count      The number of server replicas (default: 3)"
+    echo "  --namespace          The Kubernetes namespace to deploy to (default: server)"
+    echo "  --release-name       The Helm release name (default: server)"
+    echo "  --chart-path         The path to the Helm chart (default: ./charts/server)"
+    echo "  --node-selector      Node selector in key=value form (example: agentpool=userpool)"
+    echo "  --tolerations-file   Helm values file containing tolerations YAML"
+    echo "  -h, --help           Show this help message"
     echo ""
-    echo "Example:"
+    echo "Examples:"
     echo "  $0 --gateway-class istio --replica-count 3"
+    echo "  $0 --gateway-class istio --replica-count 15 --node-selector agentpool=userpool \\"
+    echo "    --tolerations-file ./server-tolerations.yaml"
     exit 1
+}
+
+json_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    printf '%s' "$value"
 }
 
 # Defaults
@@ -30,6 +44,8 @@ REPLICA_COUNT="3"
 NAMESPACE="server"
 RELEASE_NAME="server"
 CHART_PATH="./charts/server"
+NODE_SELECTOR=""
+TOLERATIONS_FILE=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -54,6 +70,14 @@ while [[ $# -gt 0 ]]; do
             CHART_PATH="$2"
             shift 2
             ;;
+        --node-selector)
+            NODE_SELECTOR="$2"
+            shift 2
+            ;;
+        --tolerations-file)
+            TOLERATIONS_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
             show_usage
             ;;
@@ -64,19 +88,49 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+NODE_SELECTOR_KEY=""
+NODE_SELECTOR_VALUE=""
+if [ -n "$NODE_SELECTOR" ]; then
+    if [[ "$NODE_SELECTOR" != *=* ]]; then
+        echo "Error: --node-selector must be in <key=value> format"
+        exit 1
+    fi
+
+    NODE_SELECTOR_KEY="${NODE_SELECTOR%%=*}"
+    NODE_SELECTOR_VALUE="${NODE_SELECTOR#*=}"
+
+    if [ -z "$NODE_SELECTOR_KEY" ] || [ -z "$NODE_SELECTOR_VALUE" ]; then
+        echo "Error: --node-selector must be in <key=value> format"
+        exit 1
+    fi
+fi
+
+HELM_ARGS=(
+    --namespace "$NAMESPACE"
+    --create-namespace
+    --set gateway.enabled=true
+    --set gateway.className="$GATEWAY_CLASS"
+    --set replicaCount="$REPLICA_COUNT"
+)
+
+if [ -n "$NODE_SELECTOR" ]; then
+    HELM_ARGS+=(--set-json "nodeSelector={\"$(json_escape "$NODE_SELECTOR_KEY")\":\"$(json_escape "$NODE_SELECTOR_VALUE")\"}")
+fi
+
+if [ -n "$TOLERATIONS_FILE" ]; then
+    HELM_ARGS+=(--values "$TOLERATIONS_FILE")
+fi
+
 echo "Deploying server with Gateway API:"
 echo "  Gateway Class: $GATEWAY_CLASS"
 echo "  Replica Count: $REPLICA_COUNT"
-echo "  Namespace:     $NAMESPACE"
-echo "  Release Name:  $RELEASE_NAME"
-echo "  Chart Path:    $CHART_PATH"
+echo "  Namespace:        $NAMESPACE"
+echo "  Release Name:     $RELEASE_NAME"
+echo "  Chart Path:       $CHART_PATH"
+echo "  Node Selector:    ${NODE_SELECTOR:-<none>}"
+echo "  Tolerations File: ${TOLERATIONS_FILE:-<none>}"
 
-helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
-    --namespace "$NAMESPACE" \
-    --create-namespace \
-    --set gateway.enabled=true \
-    --set gateway.className="$GATEWAY_CLASS" \
-    --set replicaCount="$REPLICA_COUNT"
+helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" "${HELM_ARGS[@]}"
 
 # ---------------------------------------------------------------------------
 # Wait for Gateway and HTTPRoute resources to be created by Helm
