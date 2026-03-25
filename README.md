@@ -44,6 +44,43 @@ To run the restarting backend scenario:
 
 The master script handles cluster cleanup automatically on exit. Run `./scripts/master.sh --help` for all available options.
 
+## Server scheduling options
+
+The server setup scripts support deploy-time placement for the server workload:
+
+- `--node-selector <key=value>` adds a single node selector entry to the Helm release.
+- `--tolerations-file <path>` passes an extra Helm values file to the chart.
+
+The tolerations file is read by Helm as a values fragment, so it must be valid YAML with a top-level `tolerations:` key. Example:
+
+```yaml
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: userpool
+    effect: NoSchedule
+```
+
+Do not pass a bare YAML list such as `- key: ...`; the chart expects `.Values.tolerations`.
+
+Examples:
+
+```bash
+./scripts/setup/ingress.sh \
+  --ingress-class nginx \
+  --replica-count 15 \
+  --node-selector agentpool=userpool \
+  --tolerations-file ./server-tolerations.yaml
+
+./scripts/setup/gateway.sh \
+  --gateway-class istio \
+  --replica-count 15 \
+  --node-selector agentpool=userpool \
+  --tolerations-file ./server-tolerations.yaml
+```
+
+When these flags are omitted, the setup scripts behave as before.
+
 ## Docker
 
 The Docker image provides access to all scripts via a routing entrypoint:

@@ -98,6 +98,11 @@ Vegeta attack → `vegeta encode` → `jaggr` (aggregates per-second) → `tee` 
 Single chart with two mutually exclusive traffic modes controlled by values:
 - `ingress.enabled=true` + `ingress.className=nginx` — creates an Ingress resource
 - `gateway.enabled=true` + `gateway.className=istio` — creates Gateway + HTTPRoute resources
+- `nodeSelector: {}` + `tolerations: []` — optional pod scheduling values rendered only when non-empty
+
+`scripts/setup/ingress.sh` and `scripts/setup/gateway.sh` accept `--node-selector <key=value>` and `--tolerations-file <path>` to wire these values into the Helm release.
+
+`--tolerations-file` must point to a Helm values fragment with a top-level `tolerations:` key, not a bare YAML list, because the chart reads `.Values.tolerations`.
 
 The server image is `ghcr.io/azure/aks-traffic-ingress-competitive-testing` (a Go HTTP server returning "hello world!" on `/`).
 
