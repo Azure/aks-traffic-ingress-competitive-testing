@@ -7,8 +7,31 @@ set -ex
 
 echo "Installing ingress-nginx..."
 
-# Apply the Kind-specific ingress-nginx manifest
-kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
+# Download the Kind-specific ingress-nginx manifest
+MANIFEST_URL="https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml"
+MANIFEST=$(curl -fsSL "$MANIFEST_URL")
+
+# The Kind manifest gives the controller Deployment a control-plane toleration but
+# omits it from the admission Jobs. In single-node Kind clusters this works because
+# the control-plane taint is permissive. In multi-node clusters, the control-plane
+# gets a full NoSchedule taint and the admission pods have nowhere to schedule.
+#
+# Insert the control-plane toleration into Jobs by matching the unique pattern of
+# nodeSelector followed by restartPolicy (only Jobs have this, not Deployments).
+MANIFEST=$(echo "$MANIFEST" | sed '/nodeSelector:/{
+  N
+  /kubernetes.io\/os: linux/!b
+  N
+  /restartPolicy: OnFailure/{
+    s/restartPolicy: OnFailure/tolerations:\
+      - effect: NoSchedule\
+        key: node-role.kubernetes.io\/control-plane\
+        operator: Exists\
+      restartPolicy: OnFailure/
+  }
+}')
+
+echo "$MANIFEST" | kubectl apply -f -
 
 # Wait for the ingress controller pods to be created
 echo "Waiting for ingress-nginx pods to be created..."
