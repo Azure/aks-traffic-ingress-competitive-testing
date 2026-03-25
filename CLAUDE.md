@@ -19,6 +19,9 @@ This is a load-testing framework for comparing Kubernetes ingress controllers (n
 
 # Restarting backend scenario
 ./scripts/master.sh --traffic ingress --scenario restarting-backend-rps --rate 50 --duration 90s --output-file ./results/restarting_backend_rps.json
+
+# With scheduling constraints (multi-node Kind cluster)
+./scripts/master.sh --traffic ingress --scenario basic-rps --kind-topology scheduling-e2e --node-selector scheduling=enabled --tolerations-file ./charts/server/ci-scheduling-values.yaml --rate 50 --duration 30s --output-file ./results/scheduling_test.json
 ```
 
 `master.sh` handles everything including cleanup (via EXIT trap). Requires kubectl, helm, jq, and curl on the host.
@@ -59,7 +62,9 @@ bash -n scripts/scenarios/restarting_backend_rps.sh
 
 `scripts/master.sh` is the single entry point that orchestrates these steps in order:
 
-1. **Kind cluster** — `modules/kind/install/install.sh` + `modules/kind/run/run.sh` create a cluster with `extraPortMappings` (port 8080→80)
+1. **Kind cluster** — `modules/kind/install/install.sh` + `modules/kind/run/run.sh` create a cluster with `extraPortMappings` (port 8080→80). The `--kind-topology` flag controls the cluster shape:
+   - `default` — single control-plane node (current behavior)
+   - `scheduling-e2e` — control-plane + one worker node labeled `scheduling=enabled` and tainted `scheduling=enabled:NoSchedule`
 2. **Traffic controller** — `scripts/install/nginx.sh` (Ingress) or `scripts/install/istio.sh` (Gateway API)
 3. **Server deployment** — `scripts/setup/ingress.sh` or `scripts/setup/gateway.sh` deploys `charts/server` via Helm with full readiness polling
 4. **URL + readiness** — reads `host_port` from Kind's statefile, constructs the URL, then curl-probes until HTTP 200
@@ -100,7 +105,7 @@ Single chart with two mutually exclusive traffic modes controlled by values:
 - `gateway.enabled=true` + `gateway.className=istio` — creates Gateway + HTTPRoute resources
 - `nodeSelector: {}` + `tolerations: []` — optional pod scheduling values rendered only when non-empty
 
-`scripts/setup/ingress.sh` and `scripts/setup/gateway.sh` accept `--node-selector <key=value>` and `--tolerations-file <path>` to wire these values into the Helm release.
+`scripts/setup/ingress.sh` and `scripts/setup/gateway.sh` accept `--node-selector <key=value>` and `--tolerations-file <path>` to wire these values into the Helm release. `master.sh` also accepts these flags and passes them through to the appropriate setup script.
 
 `--tolerations-file` must point to a Helm values fragment with a top-level `tolerations:` key, not a bare YAML list, because the chart reads `.Values.tolerations`.
 
@@ -108,7 +113,7 @@ The server image is `ghcr.io/azure/aks-traffic-ingress-competitive-testing` (a G
 
 ### CI (validate.yaml)
 
-The validation workflow runs on PRs to main. The `test-scenarios` job uses a matrix over `traffic: [ingress, gateway]` × `scenario: [basic-rps, restarting-backend-rps]` — each combination gets its own runner and Kind cluster. Other jobs: module tests (matrix over discovered modules), chart validation, and project structure validation.
+The validation workflow runs on PRs to main. The `test-scenarios` job uses a matrix over `traffic: [ingress, gateway]` × `scenario: [basic-rps, restarting-backend-rps]` × `variant: [default]` — each combination gets its own runner and Kind cluster. An additional `scheduling-e2e` variant tests pod placement with node selectors and tolerations on a multi-node Kind cluster. Other jobs: module tests (matrix over discovered modules), chart validation (including scheduling render checks), and project structure validation.
 
 ## Conventions
 
