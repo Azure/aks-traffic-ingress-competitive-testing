@@ -105,13 +105,21 @@ jobs:
           ./modules/${{ matrix.module }}/test/test.sh
 
   test-scenarios:
-    name: Test ${{ matrix.traffic }}/${{ matrix.scenario }}
+    name: Test ${{ matrix.traffic }}/${{ matrix.scenario }} (${{ matrix.variant }})
     runs-on: ubuntu-latest
     needs: [test-modules, start-status]
     strategy:
       matrix:
         traffic: [ingress, gateway]
         scenario: [basic-rps, restarting-backend-rps]
+        variant: [default]
+        include:
+          - traffic: ingress
+            scenario: basic-rps
+            variant: scheduling-e2e
+            kind_topology: scheduling-e2e
+            node_selector: scheduling=enabled
+            tolerations_file: ./charts/server/ci-scheduling-values.yaml
       fail-fast: false
     steps:
       - name: Checkout code
@@ -136,15 +144,33 @@ jobs:
 
       - name: Run ${{ matrix.traffic }}/${{ matrix.scenario }} scenario
         run: |
-          OUTPUT_FILE="./results/${{ matrix.traffic }}_${{ matrix.scenario }}.json"
+          OUTPUT_FILE="./results/${{ matrix.traffic }}_${{ matrix.scenario }}_${{ matrix.variant }}.json"
+          KIND_TOPOLOGY="${{ matrix.kind_topology || '' }}"
+          NODE_SELECTOR="${{ matrix.node_selector || '' }}"
+          TOLERATIONS_FILE="${{ matrix.tolerations_file || '' }}"
+
+          MASTER_ARGS=(
+            --traffic "${{ matrix.traffic }}"
+            --scenario "${{ matrix.scenario }}"
+            --rate 50
+            --duration 30s
+            --output-file "$OUTPUT_FILE"
+          )
+
+          if [ -n "$KIND_TOPOLOGY" ]; then
+            MASTER_ARGS+=(--kind-topology "$KIND_TOPOLOGY")
+          fi
+
+          if [ -n "$NODE_SELECTOR" ]; then
+            MASTER_ARGS+=(--node-selector "$NODE_SELECTOR")
+          fi
+
+          if [ -n "$TOLERATIONS_FILE" ]; then
+            MASTER_ARGS+=(--tolerations-file "$TOLERATIONS_FILE")
+          fi
 
           chmod +x ./scripts/master.sh
-          ./scripts/master.sh \
-            --traffic ${{ matrix.traffic }} \
-            --scenario ${{ matrix.scenario }} \
-            --rate 50 \
-            --duration 30s \
-            --output-file "$OUTPUT_FILE"
+          ./scripts/master.sh "${MASTER_ARGS[@]}"
 
           echo "Checking for 200 responses"
           TOTAL_200_COUNT=$(jq -r '.code.hist["200"] // 0' "$OUTPUT_FILE" | awk '{s+=$1} END {print s+0}')
@@ -216,6 +242,61 @@ jobs:
         run: |
           # Install Helm
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Verify scheduling renders
+        run: |
+          FIXTURE="./charts/server/ci-scheduling-values.yaml"
+
+          # Default render is already validated by test-scenarios running without scheduling flags.
+          # Here we only verify that scheduling values appear when explicitly provided.
+
+          assert_scheduling_render() {
+            local traffic_mode="$1"
+            local class_name="$2"
+            local rendered
+
+            if [ "$traffic_mode" = "ingress" ]; then
+              rendered=$(helm template server ./charts/server \
+                --set ingress.enabled=true \
+                --set ingress.className="$class_name" \
+                --set-json 'nodeSelector={"scheduling":"enabled"}' \
+                --values "$FIXTURE")
+            else
+              rendered=$(helm template server ./charts/server \
+                --set gateway.enabled=true \
+                --set gateway.className="$class_name" \
+                --set-json 'nodeSelector={"scheduling":"enabled"}' \
+                --values "$FIXTURE")
+            fi
+
+            printf '%s\n' "$rendered" | grep -q 'nodeSelector:' || {
+              echo "ERROR: ${traffic_mode} render missing nodeSelector"
+              exit 1
+            }
+
+            printf '%s\n' "$rendered" | grep -q 'scheduling: enabled' || {
+              echo "ERROR: ${traffic_mode} render missing scheduling nodeSelector value"
+              exit 1
+            }
+
+            printf '%s\n' "$rendered" | grep -q 'tolerations:' || {
+              echo "ERROR: ${traffic_mode} render missing tolerations"
+              exit 1
+            }
+
+            printf '%s\n' "$rendered" | grep -q 'key: scheduling' || {
+              echo "ERROR: ${traffic_mode} render missing toleration key"
+              exit 1
+            }
+
+            printf '%s\n' "$rendered" | grep -q 'value: enabled' || {
+              echo "ERROR: ${traffic_mode} render missing toleration value"
+              exit 1
+            }
+          }
+
+          assert_scheduling_render ingress nginx
+          assert_scheduling_render gateway istio
 
       - name: Setup Kind cluster
         run: |

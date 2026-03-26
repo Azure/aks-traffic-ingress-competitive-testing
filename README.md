@@ -44,6 +44,59 @@ To run the restarting backend scenario:
 
 The master script handles cluster cleanup automatically on exit. Run `./scripts/master.sh --help` for all available options.
 
+## Server scheduling options
+
+The server setup scripts support deploy-time placement for the server workload:
+
+- `--node-selector <key=value>` adds a single node selector entry to the Helm release.
+- `--tolerations-file <path>` passes an extra Helm values file to the chart.
+
+`scripts/master.sh` also exposes these deployment flags and adds `--kind-topology <default|scheduling-e2e>`:
+
+- `--kind-topology default` keeps the existing single-node Kind cluster.
+- `--kind-topology scheduling-e2e` creates a second worker node labeled `scheduling=enabled` and tainted `scheduling=enabled:NoSchedule` for placement validation.
+- When `--node-selector` is set, `scripts/master.sh` verifies that the server pods are scheduled only onto matching nodes before it runs the scenario.
+
+The tolerations file is read by Helm as a values fragment, so it must be valid YAML with a top-level `tolerations:` key. Example:
+
+```yaml
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: userpool
+    effect: NoSchedule
+```
+
+Do not pass a bare YAML list such as `- key: ...`; the chart expects `.Values.tolerations`.
+
+Examples:
+
+```bash
+./scripts/setup/ingress.sh \
+  --ingress-class nginx \
+  --replica-count 15 \
+  --node-selector agentpool=userpool \
+  --tolerations-file ./server-tolerations.yaml
+
+./scripts/setup/gateway.sh \
+  --gateway-class istio \
+  --replica-count 15 \
+  --node-selector agentpool=userpool \
+  --tolerations-file ./server-tolerations.yaml
+
+./scripts/master.sh \
+  --traffic ingress \
+  --scenario basic-rps \
+  --kind-topology scheduling-e2e \
+  --node-selector scheduling=enabled \
+  --tolerations-file ./charts/server/ci-scheduling-values.yaml \
+  --rate 50 \
+  --duration 30s \
+  --output-file ./results/scheduling_ingress_basic.json
+```
+
+When these flags are omitted, the setup scripts and `scripts/master.sh` behave as before.
+
 ## Docker
 
 The Docker image provides access to all scripts via a routing entrypoint:
