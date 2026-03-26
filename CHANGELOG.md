@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2026-03-26
+
+### Added
+
+- Pod scheduling support via `--node-selector` and `--tolerations-file` flags in `scripts/master.sh`, `scripts/setup/ingress.sh`, and `scripts/setup/gateway.sh`
+- Multi-node Kind topology (`--kind-topology scheduling-e2e`) that creates a control-plane node plus a labeled/tainted worker node for scheduling validation
+- Pod placement verification in `master.sh` that checks server pods are scheduled on expected nodes when `--node-selector` is provided
+- CI scheduling test variant that validates pod placement on multi-node Kind clusters
+- Helm chart scheduling render checks in CI workflow
+
+### Changed
+
+- `modules/kind/run/run.sh` now accepts `--topology` flag to select cluster shape (`default` or `scheduling-e2e`)
+- `scripts/install/nginx.sh` patches the ingress-nginx manifest to add control-plane tolerations to admission Jobs, fixing scheduling on multi-node Kind clusters
+
 ## [0.0.6] - 2026-03-23
 
 ### Changed
