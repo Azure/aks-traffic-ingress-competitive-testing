@@ -38,15 +38,6 @@ run_vegeta_attack() {
     local duration="30s"
     local workers=""
     local headers=""
-    local temp_results=""
-
-    # Cleanup function to remove temp file on exit
-    cleanup() {
-        if [ -n "$temp_results" ] && [ -f "$temp_results" ]; then
-            rm -f "$temp_results"
-        fi
-    }
-    trap cleanup EXIT
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -110,20 +101,32 @@ run_vegeta_attack() {
     # Run attack and generate report
     # Use a temp file to stream results to disk first, avoiding O(n) memory usage
     # This prevents OOM at high RPS (e.g., 20k RPS for 3 minutes = 3.6M requests)
+    local temp_results
     temp_results=$(mktemp)
 
     echo "Writing vegeta attack output to temp file: $temp_results"
     echo "GET $target_url" | \
     "${attack_cmd[@]}" > "$temp_results"
 
-    echo "Processing results from disk..."
-    vegeta encode < "$temp_results" | \
+    # Verify attack produced output
+    if [[ ! -s "$temp_results" ]]; then
+        echo "ERROR: Vegeta attack produced no output"
+        rm -f "$temp_results"
+        return 1
+    fi
+
+    echo "Processing results from disk ($(wc -c < "$temp_results") bytes)..."
+    # Read line-by-line and add delay at end to let jaggr complete its time bucket
+    # jaggr aggregates by wall-clock time, so we need to wait for the bucket to flush
+    (vegeta encode "$temp_results" | while IFS= read -r line; do echo "$line"; done; sleep 2) | \
     jaggr @count=rps \
       hist\[100,200,300,400,500\]:code \
       p25,p50,p99:latency \
       sum:bytes_in \
       sum:bytes_out | \
     tee "$statefile"
+
+    rm -f "$temp_results"
 }
 
 # If script is run directly (not sourced)
