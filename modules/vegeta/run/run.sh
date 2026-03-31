@@ -7,6 +7,7 @@ set -ex
 
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 statefile="${filepath}/../statefile.json"
+binfile="${filepath}/../statefile.bin"
 
 show_usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -98,27 +99,14 @@ run_vegeta_attack() {
         echo "No additional headers provided."
     fi
 
-    # Run attack and generate report
-    # Use a temp file to stream results to disk first, avoiding O(n) memory usage
-    # This prevents OOM at high RPS (e.g., 20k RPS for 3 minutes = 3.6M requests)
-    local temp_results
-    temp_results=$(mktemp)
-
-    echo "Writing vegeta attack output to temp file: $temp_results"
+    # Run attack with streaming tee pipeline:
+    # - tee saves raw binary results to .bin file (kept for downstream merge)
+    # - vegeta encode | jaggr processes results in real-time (correct per-second bucketing)
+    echo "Streaming vegeta attack to ${binfile} and jaggr..."
     echo "GET $target_url" | \
-    "${attack_cmd[@]}" > "$temp_results"
-
-    # Verify attack produced output
-    if [[ ! -s "$temp_results" ]]; then
-        echo "ERROR: Vegeta attack produced no output"
-        rm -f "$temp_results"
-        return 1
-    fi
-
-    echo "Processing results from disk ($(wc -c < "$temp_results") bytes)..."
-    # Read line-by-line and add delay at end to let jaggr complete its time bucket
-    # jaggr aggregates by wall-clock time, so we need to wait for the bucket to flush
-    (vegeta encode "$temp_results" | while IFS= read -r line; do echo "$line"; done; sleep 2) | \
+    "${attack_cmd[@]}" | \
+    tee "$binfile" | \
+    vegeta encode | \
     jaggr @count=rps \
       hist\[100,200,300,400,500\]:code \
       p25,p50,p99:latency \
@@ -126,7 +114,19 @@ run_vegeta_attack() {
       sum:bytes_out | \
     tee "$statefile"
 
-    rm -f "$temp_results"
+    # Verify the .bin file is non-empty
+    if [[ ! -s "$binfile" ]]; then
+        echo "ERROR: Vegeta attack produced no output (${binfile} is empty)"
+        return 1
+    fi
+
+    # Verify the statefile is non-empty
+    if [[ ! -s "$statefile" ]]; then
+        echo "ERROR: jaggr produced no output (${statefile} is empty)"
+        return 1
+    fi
+
+    echo "Raw binary results saved to ${binfile} ($(wc -c < "$binfile") bytes)"
 }
 
 # If script is run directly (not sourced)
