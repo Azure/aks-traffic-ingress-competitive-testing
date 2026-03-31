@@ -297,13 +297,19 @@ if [[ "${LINE_COUNT}" -lt 8 ]]; then
     exit 1
 fi
 
-# Check that each line's rps value is reasonable (roughly near 50, not the total request count)
-MAX_REASONABLE_RPS=250  # 5x the target rate is generous enough
+# Check that each line's rps value is reasonable (roughly near 50, not collapsed or empty)
+MIN_REASONABLE_RPS=38   # 0.75x the target rate
+MAX_REASONABLE_RPS=63   # 1.25x the target rate
 while IFS= read -r line; do
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
         echo "This suggests results were collapsed instead of bucketed per-second"
+        echo "Line: ${line}"
+        exit 1
+    fi
+    if [[ "${RPS_VAL}" -lt "${MIN_REASONABLE_RPS}" ]]; then
+        echo "ERROR: RPS value ${RPS_VAL} is unreasonably low (expected near 50, min ${MIN_REASONABLE_RPS})"
         echo "Line: ${line}"
         exit 1
     fi
@@ -361,9 +367,9 @@ if [[ "${MERGE_LINE_COUNT}" -lt 8 ]]; then
     exit 1
 fi
 
-# Verify code histogram sums match reported rps for each line
+# Verify code histogram sum matches reported rps on ALL lines
 while IFS= read -r line; do
-    RPS_VAL=$(echo "$line" | jq -r '.rps')
+    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
     if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
         echo "ERROR: Merge code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
@@ -371,6 +377,26 @@ while IFS= read -r line; do
         exit 1
     fi
 done < "${MERGE_OUTPUT}"
+
+# Verify each interior line's rps is reasonable (near 50, not collapsed into one giant bucket)
+# Skip the first and last lines because timestamp-based bucketing creates partial edge buckets
+# (vegeta doesn't start exactly on a second boundary)
+MIN_REASONABLE_RPS=38  # 0.75x the target rate
+MAX_REASONABLE_RPS=63  # 1.25x the target rate
+while IFS= read -r line; do
+    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
+    if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
+        echo "ERROR: Merge RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
+        echo "This suggests results were collapsed instead of bucketed per-second"
+        echo "Line: ${line}"
+        exit 1
+    fi
+    if [[ "${RPS_VAL}" -lt "${MIN_REASONABLE_RPS}" ]]; then
+        echo "ERROR: Merge RPS value ${RPS_VAL} is unreasonably low (expected near 50, min ${MIN_REASONABLE_RPS})"
+        echo "Line: ${line}"
+        exit 1
+    fi
+done < <(sed '1d;$d' "${MERGE_OUTPUT}")
 
 echo "✓ Merge single .bin file test passed"
 
@@ -404,11 +430,6 @@ if [[ ! -s "${BIN_FILE_2}" ]]; then
     exit 1
 fi
 
-# Get single-file baseline RPS for comparison
-SINGLE_MERGE=$("${MODULE_DIR}/merge/merge.sh" "${BIN_FILE_1}")
-SINGLE_AVG_RPS=$(echo "$SINGLE_MERGE" | jq -r '.rps' | awk '{s+=$1; n++} END {print int(s/n)}')
-echo "Single-file average RPS: ${SINGLE_AVG_RPS}"
-
 # Run merge.sh on both files without --output-file, capture stdout
 MULTI_MERGE_OUTPUT=$("${MODULE_DIR}/merge/merge.sh" "${BIN_FILE_1}" "${BIN_FILE_2}")
 
@@ -421,19 +442,9 @@ if [[ "${MULTI_MERGE_LINE_COUNT}" -lt 8 ]]; then
     exit 1
 fi
 
-# Verify the combined rps is meaningfully higher than a single stream
-# Since attacks ran simultaneously, merge should combine them into ~100 rps buckets
-AVG_RPS=$(echo "$MULTI_MERGE_OUTPUT" | jq -r '.rps' | awk '{s+=$1; n++} END {print int(s/n)}')
-echo "Multi-file merge average RPS: ${AVG_RPS} (single was ${SINGLE_AVG_RPS})"
-if [[ "${AVG_RPS}" -lt 60 ]]; then
-    echo "ERROR: Average RPS ${AVG_RPS} is too low for combined streams (expected roughly double ~50)"
-    echo "$MULTI_MERGE_OUTPUT"
-    exit 1
-fi
-
-# Verify code histogram sums match reported rps for each line
+# Verify code histogram sum matches reported rps on ALL lines
 while IFS= read -r line; do
-    RPS_VAL=$(echo "$line" | jq -r '.rps')
+    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
     if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
         echo "ERROR: Multi-merge code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
@@ -441,6 +452,25 @@ while IFS= read -r line; do
         exit 1
     fi
 done <<< "$MULTI_MERGE_OUTPUT"
+
+# Verify each interior line's rps is reasonable (near 100 combined, not collapsed)
+# Skip the first and last lines because timestamp-based bucketing creates partial edge buckets
+MIN_REASONABLE_RPS=75   # 0.75x the combined target rate of ~100
+MAX_REASONABLE_RPS=125  # 1.25x the combined target rate of ~100
+while IFS= read -r line; do
+    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
+    if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
+        echo "ERROR: Multi-merge RPS value ${RPS_VAL} is unreasonably high (expected near 100, max ${MAX_REASONABLE_RPS})"
+        echo "This suggests results were collapsed instead of bucketed per-second"
+        echo "Line: ${line}"
+        exit 1
+    fi
+    if [[ "${RPS_VAL}" -lt "${MIN_REASONABLE_RPS}" ]]; then
+        echo "ERROR: Multi-merge RPS value ${RPS_VAL} is unreasonably low (expected near 100, min ${MIN_REASONABLE_RPS})"
+        echo "Line: ${line}"
+        exit 1
+    fi
+done < <(echo "$MULTI_MERGE_OUTPUT" | sed '1d;$d')
 
 echo "✓ Merge multiple simultaneous .bin files test passed"
 
