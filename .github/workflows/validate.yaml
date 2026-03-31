@@ -25,7 +25,7 @@ jobs:
     name: End Status
     if: always() 
     runs-on: ubuntu-latest
-    needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts]
+    needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts, test-merge]
     permissions:
       contents: read
       statuses: write
@@ -83,7 +83,7 @@ jobs:
       - name: Install common dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq curl wget
+          sudo apt-get install -y jq curl wget gawk
 
       - name: Set up Go (for jplot module)
         if: matrix.module == 'jplot'
@@ -184,6 +184,132 @@ jobs:
           fi
 
           echo "✓ ${{ matrix.traffic }}/${{ matrix.scenario }} scenario executed successfully"
+
+  test-merge:
+    name: Test Multi-Pod Merge
+    runs-on: ubuntu-latest
+    needs: [test-modules, start-status]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl wget gawk
+
+      - name: Install vegeta and jaggr
+        run: |
+          chmod +x modules/vegeta/install/install.sh
+          modules/vegeta/install/install.sh
+
+      - name: Start test server
+        run: |
+          docker run -d \
+            --name merge-test-server \
+            -p 9998:9998 \
+            -e PORT=9998 \
+            ghcr.io/azure/aks-traffic-ingress-competitive-testing:8aba95806ff611e9939257e2c3c9f53b3af5f7a2
+
+          for i in {1..10}; do
+            if curl -s http://localhost:9998 > /dev/null; then
+              echo "Test server ready"
+              break
+            fi
+            echo "Waiting for server... (attempt $i/10)"
+            sleep 2
+          done
+
+      - name: Run 4 simultaneous vegeta attacks
+        run: |
+          mkdir -p results/merge-test
+
+          # Simulate 4 pods each attacking at 50 RPS for 15s (total: 200 RPS)
+          for pod in 0 1 2 3; do
+            echo "GET http://localhost:9998" | \
+              vegeta attack -rate=50 -duration=15s -workers=2 \
+              > "results/merge-test/pod${pod}.bin" &
+          done
+
+          echo "Waiting for all 4 attacks to complete..."
+          wait
+          echo "All attacks finished"
+
+          # Verify all .bin files are non-empty
+          for pod in 0 1 2 3; do
+            if [[ ! -s "results/merge-test/pod${pod}.bin" ]]; then
+              echo "ERROR: pod${pod}.bin is empty"
+              exit 1
+            fi
+            echo "pod${pod}.bin: $(wc -c < results/merge-test/pod${pod}.bin) bytes"
+          done
+
+      - name: Merge results and validate
+        run: |
+          chmod +x modules/vegeta/merge/merge.sh
+
+          modules/vegeta/merge/merge.sh \
+            --output-file results/merge-test/merged.json \
+            results/merge-test/pod0.bin \
+            results/merge-test/pod1.bin \
+            results/merge-test/pod2.bin \
+            results/merge-test/pod3.bin
+
+          echo "=== Merged output ==="
+          cat results/merge-test/merged.json
+          echo ""
+
+          # Verify the merged file is non-empty
+          if [[ ! -s results/merge-test/merged.json ]]; then
+            echo "ERROR: Merged output is empty"
+            exit 1
+          fi
+
+          # Verify per-second bucketing: 15s test should produce at least 12 lines
+          LINE_COUNT=$(wc -l < results/merge-test/merged.json)
+          echo "Merged output has ${LINE_COUNT} lines for a 15s test"
+          if [[ "${LINE_COUNT}" -lt 12 ]]; then
+            echo "ERROR: Expected at least 12 second-buckets for a 15s test, got ${LINE_COUNT}"
+            exit 1
+          fi
+
+          # Verify combined RPS is roughly 200 (4 pods x 50 RPS)
+          AVG_RPS=$(jq -r '.rps' results/merge-test/merged.json | awk '{s+=$1; n++} END {print int(s/n)}')
+          echo "Average merged RPS: ${AVG_RPS} (expected ~200)"
+          if [[ "${AVG_RPS}" -lt 120 ]]; then
+            echo "ERROR: Average RPS ${AVG_RPS} is too low (expected ~200 from 4x50 RPS)"
+            exit 1
+          fi
+
+          # Verify code histogram sums match reported rps for each line
+          while IFS= read -r line; do
+            RPS_VAL=$(echo "$line" | jq -r '.rps')
+            CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
+            if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
+              echo "ERROR: Code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
+              echo "Line: ${line}"
+              exit 1
+            fi
+          done < results/merge-test/merged.json
+
+          # Verify all lines have the expected JSON structure
+          while IFS= read -r line; do
+            for field in rps code.hist latency.p25 latency.p50 latency.p99 bytes_in.sum bytes_out.sum; do
+              if ! echo "$line" | jq -e ".${field}" > /dev/null 2>&1; then
+                echo "ERROR: Merged output line missing field '${field}'"
+                echo "Line: ${line}"
+                exit 1
+              fi
+            done
+          done < results/merge-test/merged.json
+
+          echo "✓ Multi-pod merge validation passed"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop merge-test-server > /dev/null 2>&1 || true
+          docker rm merge-test-server > /dev/null 2>&1 || true
 
   validate-structure:
     name: Validate Project Structure
