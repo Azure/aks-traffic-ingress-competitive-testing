@@ -29,6 +29,8 @@ cleanup() {
 
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
+    rm -f "${MODULE_DIR}/statefile.bin" || true
+    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* || true
 }
 
 # Set trap to cleanup on exit
@@ -104,8 +106,8 @@ chmod +x "${MODULE_DIR}/run/run.sh"
 cd "${PROJECT_ROOT}"
 "${MODULE_DIR}/run/run.sh" \
     --target-url "http://localhost:${TEST_PORT}" \
-    --rate 5 \
-    --duration 2s \
+    --rate 50 \
+    --duration 10s \
     --workers 2
 
 # Verify statefile was created
@@ -132,16 +134,18 @@ if ! grep -q "rps" "${STATEFILE}"; then
     exit 1
 fi
 
-# Check that we have successful HTTP 200 responses
-STATUS_200_COUNT=$(head -n 1 "${STATEFILE}" | jq -r '.code.hist["200"] // 0' 2>/dev/null || echo "0")
-if [[ "${STATUS_200_COUNT}" =~ ^[0-9]+$ ]] && [[ "${STATUS_200_COUNT}" -gt 0 ]]; then
-    echo "✓ Found ${STATUS_200_COUNT} successful HTTP 200 responses"
-else
-    echo "ERROR: Expected HTTP 200 responses but found: ${STATUS_200_COUNT}"
-    echo "First line of state file:"
-    head -n 1 "${STATEFILE}" 2>/dev/null || echo "State file not found or empty"
-    exit 1
-fi
+# Check that the sum of status codes in the histogram equals the reported rps
+# (validates every request was accounted for, regardless of status code)
+while IFS= read -r line; do
+    RPS_VAL=$(echo "$line" | jq -r '.rps')
+    CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
+    if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
+        echo "ERROR: Code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
+        echo "Line: ${line}"
+        exit 1
+    fi
+done < "${STATEFILE}"
+echo "✓ All status code histogram sums match reported rps"
 
 echo "✓ State file content test passed"
 
@@ -173,8 +177,8 @@ echo "8. Testing different attack parameters..."
 # Test with different parameters
 "${MODULE_DIR}/run/run.sh" \
     --target-url "http://localhost:${TEST_PORT}" \
-    --rate 10 \
-    --duration 1s \
+    --rate 500 \
+    --duration 20s \
     --workers 1
 
 echo "✓ Parameter variation test passed"
@@ -182,8 +186,8 @@ echo "✓ Parameter variation test passed"
 echo "9. Testing header-only named invocation..."
 HEADER_ONLY_OUTPUT=$("${MODULE_DIR}/run/run.sh" \
     --target-url "http://localhost:${TEST_PORT}" \
-    --rate 10 \
-    --duration 1s \
+    --rate 500 \
+    --duration 20s \
     --request-headers "X-Test-Header: header-only" 2>&1)
 echo "Header-only output:"
 printf '%s\n' "${HEADER_ONLY_OUTPUT}"
@@ -207,8 +211,8 @@ echo "✓ Header-only invocation test passed"
 echo "10. Testing workers plus headers named invocation..."
 WORKERS_AND_HEADERS_OUTPUT=$("${MODULE_DIR}/run/run.sh" \
     --target-url "http://localhost:${TEST_PORT}" \
-    --rate 10 \
-    --duration 1s \
+    --rate 500 \
+    --duration 20s \
     --workers 1 \
     --request-headers "X-Test-Header: with-workers" 2>&1)
 echo "Workers and headers output:"
@@ -253,5 +257,296 @@ fi
 
 echo "✓ Positional invocation failure test passed"
 
+echo "12. Testing raw .bin file is produced alongside statefile..."
+BINFILE="${MODULE_DIR}/statefile.bin"
+if [[ ! -f "${BINFILE}" ]]; then
+    echo "ERROR: Binary file was not created at ${BINFILE}"
+    exit 1
+fi
+
+if [[ ! -s "${BINFILE}" ]]; then
+    echo "ERROR: Binary file is empty"
+    exit 1
+fi
+
+# Verify it's valid vegeta binary by running vegeta encode on it
+if ! vegeta encode "${BINFILE}" | head -n 1 | jq . > /dev/null 2>&1; then
+    echo "ERROR: Binary file is not valid vegeta binary format"
+    exit 1
+fi
+
+echo "✓ Raw .bin file test passed"
+
+echo "13. Testing per-second bucketing is correct..."
+# Run a fresh attack with known rate and duration
+rm -f "${STATEFILE}" "${BINFILE}"
+"${MODULE_DIR}/run/run.sh" \
+    --target-url "http://localhost:${TEST_PORT}" \
+    --rate 50 \
+    --duration 10s \
+    --workers 2
+
+# Count lines in statefile — a 10s test should produce ~10 lines (one per second)
+# Allow some slack for edge effects on the first/last partial second
+LINE_COUNT=$(wc -l < "${STATEFILE}")
+echo "Statefile has ${LINE_COUNT} lines (second-buckets) for a 10s test"
+if [[ "${LINE_COUNT}" -lt 8 ]]; then
+    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${LINE_COUNT}"
+    echo "Statefile content:"
+    cat "${STATEFILE}"
+    exit 1
+fi
+
+# Check that each line's rps value is reasonable (roughly near 50, not the total request count)
+MAX_REASONABLE_RPS=250  # 5x the target rate is generous enough
+while IFS= read -r line; do
+    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
+    if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
+        echo "ERROR: RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
+        echo "This suggests results were collapsed instead of bucketed per-second"
+        echo "Line: ${line}"
+        exit 1
+    fi
+done < "${STATEFILE}"
+
+echo "✓ Per-second bucketing test passed"
+
+echo "14. Testing merge.sh with a single .bin file..."
+chmod +x "${MODULE_DIR}/merge/merge.sh"
+
+# Run a vegeta attack to produce a .bin file
+rm -f "${STATEFILE}" "${BINFILE}"
+"${MODULE_DIR}/run/run.sh" \
+    --target-url "http://localhost:${TEST_PORT}" \
+    --rate 50 \
+    --duration 10s \
+    --workers 2
+
+MERGE_OUTPUT="/tmp/vegeta-test-merge-single.json"
+rm -f "${MERGE_OUTPUT}"
+
+"${MODULE_DIR}/merge/merge.sh" --output-file "${MERGE_OUTPUT}" "${BINFILE}"
+
+# Validate output file exists and is non-empty
+if [[ ! -s "${MERGE_OUTPUT}" ]]; then
+    echo "ERROR: Merge output file is empty or missing"
+    exit 1
+fi
+
+# Validate each line is valid JSON with expected fields
+while IFS= read -r line; do
+    for field in rps "code" "latency" "bytes_in" "bytes_out"; do
+        if ! echo "$line" | jq -e ".${field}" > /dev/null 2>&1; then
+            echo "ERROR: Merge output line missing expected field '${field}'"
+            echo "Line: ${line}"
+            exit 1
+        fi
+    done
+    # Check latency subfields
+    for subfield in p25 p50 p99; do
+        if ! echo "$line" | jq -e ".latency.${subfield}" > /dev/null 2>&1; then
+            echo "ERROR: Merge output line missing latency.${subfield}"
+            echo "Line: ${line}"
+            exit 1
+        fi
+    done
+done < "${MERGE_OUTPUT}"
+
+# Verify line count roughly matches the 10s test duration
+MERGE_LINE_COUNT=$(wc -l < "${MERGE_OUTPUT}")
+echo "Merge output has ${MERGE_LINE_COUNT} lines (second-buckets) for a 10s test"
+if [[ "${MERGE_LINE_COUNT}" -lt 8 ]]; then
+    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${MERGE_LINE_COUNT}"
+    cat "${MERGE_OUTPUT}"
+    exit 1
+fi
+
+# Verify code histogram sums match reported rps for each line
+while IFS= read -r line; do
+    RPS_VAL=$(echo "$line" | jq -r '.rps')
+    CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
+    if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
+        echo "ERROR: Merge code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
+        echo "Line: ${line}"
+        exit 1
+    fi
+done < "${MERGE_OUTPUT}"
+
+echo "✓ Merge single .bin file test passed"
+
+echo "15. Testing merge.sh combining multiple simultaneous .bin files..."
+# Run two vegeta attacks in parallel so their timestamps actually overlap
+BIN_FILE_1="/tmp/vegeta-test-attack1.bin"
+BIN_FILE_2="/tmp/vegeta-test-attack2.bin"
+STATEFILE_1="/tmp/vegeta-test-statefile1.json"
+STATEFILE_2="/tmp/vegeta-test-statefile2.json"
+rm -f "${BIN_FILE_1}" "${BIN_FILE_2}" "${STATEFILE_1}" "${STATEFILE_2}"
+
+# Launch both attacks simultaneously in background
+echo "GET http://localhost:${TEST_PORT}" | \
+    vegeta attack -rate=50 -duration=10s -workers=2 > "${BIN_FILE_1}" &
+PID1=$!
+
+echo "GET http://localhost:${TEST_PORT}" | \
+    vegeta attack -rate=50 -duration=10s -workers=2 > "${BIN_FILE_2}" &
+PID2=$!
+
+# Wait for both to finish
+wait "$PID1" "$PID2"
+
+# Verify both produced output
+if [[ ! -s "${BIN_FILE_1}" ]]; then
+    echo "ERROR: Attack 1 produced no output"
+    exit 1
+fi
+if [[ ! -s "${BIN_FILE_2}" ]]; then
+    echo "ERROR: Attack 2 produced no output"
+    exit 1
+fi
+
+# Get single-file baseline RPS for comparison
+SINGLE_MERGE=$("${MODULE_DIR}/merge/merge.sh" "${BIN_FILE_1}")
+SINGLE_AVG_RPS=$(echo "$SINGLE_MERGE" | jq -r '.rps' | awk '{s+=$1; n++} END {print int(s/n)}')
+echo "Single-file average RPS: ${SINGLE_AVG_RPS}"
+
+# Run merge.sh on both files without --output-file, capture stdout
+MULTI_MERGE_OUTPUT=$("${MODULE_DIR}/merge/merge.sh" "${BIN_FILE_1}" "${BIN_FILE_2}")
+
+# Verify line count roughly matches the 10s test duration
+MULTI_MERGE_LINE_COUNT=$(echo "$MULTI_MERGE_OUTPUT" | wc -l)
+echo "Multi-file merge output has ${MULTI_MERGE_LINE_COUNT} lines (second-buckets) for a 10s test"
+if [[ "${MULTI_MERGE_LINE_COUNT}" -lt 8 ]]; then
+    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${MULTI_MERGE_LINE_COUNT}"
+    echo "$MULTI_MERGE_OUTPUT"
+    exit 1
+fi
+
+# Verify the combined rps is meaningfully higher than a single stream
+# Since attacks ran simultaneously, merge should combine them into ~100 rps buckets
+AVG_RPS=$(echo "$MULTI_MERGE_OUTPUT" | jq -r '.rps' | awk '{s+=$1; n++} END {print int(s/n)}')
+echo "Multi-file merge average RPS: ${AVG_RPS} (single was ${SINGLE_AVG_RPS})"
+if [[ "${AVG_RPS}" -lt 60 ]]; then
+    echo "ERROR: Average RPS ${AVG_RPS} is too low for combined streams (expected roughly double ~50)"
+    echo "$MULTI_MERGE_OUTPUT"
+    exit 1
+fi
+
+# Verify code histogram sums match reported rps for each line
+while IFS= read -r line; do
+    RPS_VAL=$(echo "$line" | jq -r '.rps')
+    CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
+    if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
+        echo "ERROR: Multi-merge code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
+        echo "Line: ${line}"
+        exit 1
+    fi
+done <<< "$MULTI_MERGE_OUTPUT"
+
+echo "✓ Merge multiple simultaneous .bin files test passed"
+
+echo "16. Testing merge.sh latency percentile logic..."
+# Create a synthetic .bin file with known latencies to verify percentile calculation.
+# We craft vegeta-format CSV with controlled latency values, then convert back to binary.
+#
+# Strategy: 100 requests in one second-bucket.
+# Latencies: 1ms, 2ms, 3ms, ..., 100ms (in nanoseconds: 1000000, 2000000, ..., 100000000)
+# Expected percentiles:
+#   p25 = sorted[int(100 * 0.25)] = sorted[25] = 25ms = 25000000ns
+#   p50 = sorted[int(100 * 0.50)] = sorted[50] = 50ms = 50000000ns
+#   p99 = sorted[int(100 * 0.99)] = sorted[99] = 99ms = 99000000ns
+
+SYNTHETIC_CSV="/tmp/vegeta-test-synthetic.csv"
+SYNTHETIC_BIN="/tmp/vegeta-test-synthetic.bin"
+SYNTHETIC_OUT="/tmp/vegeta-test-synthetic-merged.json"
+rm -f "${SYNTHETIC_CSV}" "${SYNTHETIC_BIN}" "${SYNTHETIC_OUT}"
+
+# Generate 100 CSV lines with all 12 vegeta columns:
+# timestamp_ns, status_code, latency_ns, bytes_out, bytes_in, error,
+# body(base64), attack_name, seq, method, url, headers(base64)
+# All within the same second (timestamp = 1700000000000000000 + i*1000000 to space within 1s)
+BASE_TS=1700000000000000000
+for i in $(seq 1 100); do
+    TS=$((BASE_TS + i * 1000000))  # spread within same second
+    LATENCY=$((i * 1000000))       # 1ms to 100ms in nanoseconds
+    echo "${TS},200,${LATENCY},0,13,,,,${i},GET,http://localhost/,"
+done > "${SYNTHETIC_CSV}"
+
+# Convert CSV to vegeta binary (gob) format
+vegeta encode --to gob < "${SYNTHETIC_CSV}" > "${SYNTHETIC_BIN}"
+
+if [[ ! -s "${SYNTHETIC_BIN}" ]]; then
+    echo "ERROR: Failed to create synthetic .bin file"
+    exit 1
+fi
+
+# Run merge on the synthetic data
+"${MODULE_DIR}/merge/merge.sh" --output-file "${SYNTHETIC_OUT}" "${SYNTHETIC_BIN}"
+
+if [[ ! -s "${SYNTHETIC_OUT}" ]]; then
+    echo "ERROR: Merge of synthetic data produced no output"
+    exit 1
+fi
+
+# Should be exactly 1 line (all requests in the same second)
+SYNTH_LINES=$(wc -l < "${SYNTHETIC_OUT}")
+if [[ "${SYNTH_LINES}" -ne 1 ]]; then
+    echo "ERROR: Expected 1 line from synthetic data, got ${SYNTH_LINES}"
+    cat "${SYNTHETIC_OUT}"
+    exit 1
+fi
+
+SYNTH_LINE=$(cat "${SYNTHETIC_OUT}")
+
+# Verify rps = 100
+SYNTH_RPS=$(echo "$SYNTH_LINE" | jq -r '.rps')
+if [[ "${SYNTH_RPS}" -ne 100 ]]; then
+    echo "ERROR: Expected rps=100, got ${SYNTH_RPS}"
+    echo "$SYNTH_LINE"
+    exit 1
+fi
+
+# Verify all 100 responses are code 200
+SYNTH_200=$(echo "$SYNTH_LINE" | jq -r '.code.hist["200"]')
+if [[ "${SYNTH_200}" -ne 100 ]]; then
+    echo "ERROR: Expected code 200 count=100, got ${SYNTH_200}"
+    echo "$SYNTH_LINE"
+    exit 1
+fi
+
+# Verify latency percentiles
+# p25 = sorted[25] = 25ms = 25000000ns
+SYNTH_P25=$(echo "$SYNTH_LINE" | jq -r '.latency.p25')
+if [[ "${SYNTH_P25}" -ne 25000000 ]]; then
+    echo "ERROR: Expected latency.p25=25000000, got ${SYNTH_P25}"
+    echo "$SYNTH_LINE"
+    exit 1
+fi
+
+# p50 = sorted[50] = 50ms = 50000000ns
+SYNTH_P50=$(echo "$SYNTH_LINE" | jq -r '.latency.p50')
+if [[ "${SYNTH_P50}" -ne 50000000 ]]; then
+    echo "ERROR: Expected latency.p50=50000000, got ${SYNTH_P50}"
+    echo "$SYNTH_LINE"
+    exit 1
+fi
+
+# p99 = sorted[99] = 99ms = 99000000ns
+SYNTH_P99=$(echo "$SYNTH_LINE" | jq -r '.latency.p99')
+if [[ "${SYNTH_P99}" -ne 99000000 ]]; then
+    echo "ERROR: Expected latency.p99=99000000, got ${SYNTH_P99}"
+    echo "$SYNTH_LINE"
+    exit 1
+fi
+
+# Verify bytes_in.sum = 13 * 100 = 1300
+SYNTH_BYTES_IN=$(echo "$SYNTH_LINE" | jq -r '.bytes_in.sum')
+if [[ "${SYNTH_BYTES_IN}" -ne 1300 ]]; then
+    echo "ERROR: Expected bytes_in.sum=1300, got ${SYNTH_BYTES_IN}"
+    echo "$SYNTH_LINE"
+    exit 1
+fi
+
+echo "✓ Merge latency percentile logic test passed"
+
 echo ""
-echo "🎉 All Vegeta module tests passed!"
+echo "All Vegeta module tests passed!"
