@@ -76,6 +76,7 @@ Each module under `modules/` follows the same interface:
 - `install/install.sh` — installs the tool
 - `run/run.sh` — runs the tool (can be sourced as a library or executed directly)
 - `output/output.sh` — reads from `../statefile.json` and emits results
+- `merge/merge.sh` — (vegeta only) merges multiple `.bin` files into per-second JSON output using timestamp-based bucketing
 - `test/test.sh` — integration test
 
 Modules communicate via **statefile.json** (one per module, gitignored in practice). The kind module writes `{"cluster_name": "...", "host_port": "..."}`. The vegeta module writes streaming jaggr JSON (one line per second of the test).
@@ -88,6 +89,7 @@ The Dockerfile entrypoint routes commands to scripts via prefix matching:
 - `install/<name> [args...]` → `scripts/install/<name>.sh`
 - `setup/<name> [args...]` → `scripts/setup/<name>.sh`
 - `module/<name>/<action> [args...]` → `modules/<name>/<action>/<action>.sh`
+- `merge [args...]` → `modules/vegeta/merge/merge.sh`
 - `server` → starts the Go HTTP server
 
 ### Scenario interface
@@ -96,7 +98,9 @@ Scenarios accept CLI arguments (`--ingress-url`, `--rate`, `--duration`, `--work
 
 ### Data flow for results
 
-Vegeta attack → `vegeta encode` → `jaggr` (aggregates per-second) → `tee` to `modules/vegeta/statefile.json`. The scenario script then copies statefile content to the `--output-file`. The result file contains **one JSON line per second** of the test. The CI validation sums `code.hist["200"]` across **all lines** and fails only if the total is zero (i.e., no connection was ever successfully routed).
+The vegeta run pipeline streams results in real time: `vegeta attack | tee statefile.bin | vegeta encode | jaggr | tee statefile.json`. This saves raw binary results to `.bin` alongside the per-second jaggr JSON. The scenario script then copies statefile.json content to the `--output-file`. The result file contains **one JSON line per second** of the test. The CI validation sums `code.hist["200"]` across **all lines** and fails only if the total is zero (i.e., no connection was ever successfully routed).
+
+For multi-pod tests, `modules/vegeta/merge/merge.sh` combines multiple `.bin` files into unified per-second JSON. It uses actual request timestamps for bucketing (not wall-clock time), so it correctly interleaves results from pods that started at slightly different times. The first and last second-buckets may be partial.
 
 ### Helm chart (charts/server)
 
@@ -113,11 +117,11 @@ The server image is `ghcr.io/azure/aks-traffic-ingress-competitive-testing` (a G
 
 ### CI (validate.yaml)
 
-The validation workflow runs on PRs to main. The `test-scenarios` job uses a matrix over `traffic: [ingress, gateway]` × `scenario: [basic-rps, restarting-backend-rps]` × `variant: [default]` — each combination gets its own runner and Kind cluster. An additional `scheduling-e2e` variant tests pod placement with node selectors and tolerations on a multi-node Kind cluster. Other jobs: module tests (matrix over discovered modules), chart validation (including scheduling render checks), and project structure validation.
+The validation workflow runs on PRs to main. The `test-scenarios` job uses a matrix over `traffic: [ingress, gateway]` × `scenario: [basic-rps, restarting-backend-rps]` × `variant: [default]` — each combination gets its own runner and Kind cluster. An additional `scheduling-e2e` variant tests pod placement with node selectors and tolerations on a multi-node Kind cluster. The `test-merge` job validates multi-pod merge by running 4 simultaneous vegeta attacks against a Docker server and verifying the merged output (RPS totals, code histograms, JSON structure). Other jobs: module tests (matrix over discovered modules), chart validation (including scheduling render checks), and project structure validation.
 
 ## Conventions
 
 - All scripts expect to be **run from the repository root**.
-- All shell scripts use `set -ex` (or `set -e` for library-style scripts).
+- All shell scripts use `set -ex` (or `set -e` for library-style scripts). Scripts with data-processing pipelines also use `set -o pipefail` so that failures in any pipeline stage propagate correctly.
 - The `--traffic` flag accepts `ingress` or `gateway`. The `--scenario` flag accepts `basic-rps` or `restarting-backend-rps`.
 - Releases are driven by CHANGELOG.md — the Release workflow reads it to create GitHub releases. Follow [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
