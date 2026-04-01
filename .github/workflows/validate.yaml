@@ -265,11 +265,12 @@ jobs:
             exit 1
           fi
 
-          # Verify per-second bucketing: 15s test should produce at least 12 lines
+          # Verify per-second bucketing: 15s test should produce at least 10 lines
+          # (merge.sh drops the first and last partial edge buckets)
           LINE_COUNT=$(wc -l < results/merge-test/merged.json)
           echo "Merged output has ${LINE_COUNT} lines for a 15s test"
-          if [[ "${LINE_COUNT}" -lt 12 ]]; then
-            echo "ERROR: Expected at least 12 second-buckets for a 15s test, got ${LINE_COUNT}"
+          if [[ "${LINE_COUNT}" -lt 10 ]]; then
+            echo "ERROR: Expected at least 10 second-buckets for a 15s test (after edge trim), got ${LINE_COUNT}"
             exit 1
           fi
 

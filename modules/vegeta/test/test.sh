@@ -30,7 +30,7 @@ cleanup() {
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
     rm -f "${MODULE_DIR}/statefile.bin" || true
-    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* || true
+    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* || true
 }
 
 # Set trap to cleanup on exit
@@ -359,15 +359,19 @@ while IFS= read -r line; do
 done < "${MERGE_OUTPUT}"
 
 # Verify line count roughly matches the 10s test duration
+# merge.sh drops the first and last partial buckets, so expect ~8 lines from a 10s test
 MERGE_LINE_COUNT=$(wc -l < "${MERGE_OUTPUT}")
 echo "Merge output has ${MERGE_LINE_COUNT} lines (second-buckets) for a 10s test"
-if [[ "${MERGE_LINE_COUNT}" -lt 8 ]]; then
-    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${MERGE_LINE_COUNT}"
+if [[ "${MERGE_LINE_COUNT}" -lt 6 ]]; then
+    echo "ERROR: Expected at least 6 second-buckets for a 10s test (after edge trim), got ${MERGE_LINE_COUNT}"
     cat "${MERGE_OUTPUT}"
     exit 1
 fi
 
-# Verify code histogram sum matches reported rps on ALL lines
+# Verify each line's code histogram sum matches rps, and rps is reasonable
+# merge.sh already drops partial edge buckets, so all lines should be complete
+MIN_REASONABLE_RPS=38  # 0.75x the target rate
+MAX_REASONABLE_RPS=63  # 1.25x the target rate
 while IFS= read -r line; do
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
@@ -376,15 +380,6 @@ while IFS= read -r line; do
         echo "Line: ${line}"
         exit 1
     fi
-done < "${MERGE_OUTPUT}"
-
-# Verify each interior line's rps is reasonable (near 50, not collapsed into one giant bucket)
-# Skip the first and last lines because timestamp-based bucketing creates partial edge buckets
-# (vegeta doesn't start exactly on a second boundary)
-MIN_REASONABLE_RPS=38  # 0.75x the target rate
-MAX_REASONABLE_RPS=63  # 1.25x the target rate
-while IFS= read -r line; do
-    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: Merge RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
         echo "This suggests results were collapsed instead of bucketed per-second"
@@ -396,7 +391,7 @@ while IFS= read -r line; do
         echo "Line: ${line}"
         exit 1
     fi
-done < <(sed '1d;$d' "${MERGE_OUTPUT}")
+done < "${MERGE_OUTPUT}"
 
 echo "✓ Merge single .bin file test passed"
 
@@ -404,9 +399,7 @@ echo "15. Testing merge.sh combining multiple simultaneous .bin files..."
 # Run two vegeta attacks in parallel so their timestamps actually overlap
 BIN_FILE_1="/tmp/vegeta-test-attack1.bin"
 BIN_FILE_2="/tmp/vegeta-test-attack2.bin"
-STATEFILE_1="/tmp/vegeta-test-statefile1.json"
-STATEFILE_2="/tmp/vegeta-test-statefile2.json"
-rm -f "${BIN_FILE_1}" "${BIN_FILE_2}" "${STATEFILE_1}" "${STATEFILE_2}"
+rm -f "${BIN_FILE_1}" "${BIN_FILE_2}"
 
 # Launch both attacks simultaneously in background
 echo "GET http://localhost:${TEST_PORT}" | \
@@ -434,15 +427,19 @@ fi
 MULTI_MERGE_OUTPUT=$("${MODULE_DIR}/merge/merge.sh" "${BIN_FILE_1}" "${BIN_FILE_2}")
 
 # Verify line count roughly matches the 10s test duration
+# merge.sh drops the first and last partial buckets, so expect ~8 lines from a 10s test
 MULTI_MERGE_LINE_COUNT=$(echo "$MULTI_MERGE_OUTPUT" | wc -l)
 echo "Multi-file merge output has ${MULTI_MERGE_LINE_COUNT} lines (second-buckets) for a 10s test"
-if [[ "${MULTI_MERGE_LINE_COUNT}" -lt 8 ]]; then
-    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${MULTI_MERGE_LINE_COUNT}"
+if [[ "${MULTI_MERGE_LINE_COUNT}" -lt 6 ]]; then
+    echo "ERROR: Expected at least 6 second-buckets for a 10s test (after edge trim), got ${MULTI_MERGE_LINE_COUNT}"
     echo "$MULTI_MERGE_OUTPUT"
     exit 1
 fi
 
-# Verify code histogram sum matches reported rps on ALL lines
+# Verify each line's code histogram sum matches rps, and rps is reasonable
+# merge.sh already drops partial edge buckets, so all lines should be complete
+MIN_REASONABLE_RPS=75   # 0.75x the combined target rate of ~100
+MAX_REASONABLE_RPS=125  # 1.25x the combined target rate of ~100
 while IFS= read -r line; do
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
@@ -451,14 +448,6 @@ while IFS= read -r line; do
         echo "Line: ${line}"
         exit 1
     fi
-done <<< "$MULTI_MERGE_OUTPUT"
-
-# Verify each interior line's rps is reasonable (near 100 combined, not collapsed)
-# Skip the first and last lines because timestamp-based bucketing creates partial edge buckets
-MIN_REASONABLE_RPS=75   # 0.75x the combined target rate of ~100
-MAX_REASONABLE_RPS=125  # 1.25x the combined target rate of ~100
-while IFS= read -r line; do
-    RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: Multi-merge RPS value ${RPS_VAL} is unreasonably high (expected near 100, max ${MAX_REASONABLE_RPS})"
         echo "This suggests results were collapsed instead of bucketed per-second"
@@ -470,67 +459,121 @@ while IFS= read -r line; do
         echo "Line: ${line}"
         exit 1
     fi
-done < <(echo "$MULTI_MERGE_OUTPUT" | sed '1d;$d')
+done <<< "$MULTI_MERGE_OUTPUT"
 
 echo "✓ Merge multiple simultaneous .bin files test passed"
 
-echo "16. Testing merge.sh latency percentile logic..."
-# Create a synthetic .bin file with known latencies to verify percentile calculation.
-# We craft vegeta-format CSV with controlled latency values, then convert back to binary.
+echo "16. Testing merge.sh latency percentile logic with multi-pod synthetic data..."
+# Simulate two pods attacking the same server by creating two separate .bin files
+# with overlapping timestamps in the same second-buckets. This verifies that merge.sh
+# correctly interleaves requests from multiple sources and computes accurate percentiles
+# across the combined data.
 #
-# Strategy: 100 requests in one second-bucket.
-# Latencies: 1ms, 2ms, 3ms, ..., 100ms (in nanoseconds: 1000000, 2000000, ..., 100000000)
-# Expected percentiles:
+# Strategy: Each pod produces 3 second-buckets (edge, interior, edge).
+# After merge drops the first and last buckets, the interior bucket will contain
+# the combined requests from both pods.
+#
+# Pod A interior bucket: 50 requests with latencies 1ms, 3ms, 5ms, ..., 99ms (odd ms)
+# Pod B interior bucket: 50 requests with latencies 2ms, 4ms, 6ms, ..., 100ms (even ms)
+# Combined: 100 requests with latencies 1ms, 2ms, 3ms, ..., 100ms
+#
+# Expected percentiles (same as single-source case):
 #   p25 = sorted[int(100 * 0.25)] = sorted[25] = 25ms = 25000000ns
 #   p50 = sorted[int(100 * 0.50)] = sorted[50] = 50ms = 50000000ns
 #   p99 = sorted[int(100 * 0.99)] = sorted[99] = 99ms = 99000000ns
 
-SYNTHETIC_CSV="/tmp/vegeta-test-synthetic.csv"
-SYNTHETIC_BIN="/tmp/vegeta-test-synthetic.bin"
+SYNTHETIC_CSV_A="/tmp/vegeta-test-synthetic-a.csv"
+SYNTHETIC_CSV_B="/tmp/vegeta-test-synthetic-b.csv"
+SYNTHETIC_BIN_A="/tmp/vegeta-test-synthetic-a.bin"
+SYNTHETIC_BIN_B="/tmp/vegeta-test-synthetic-b.bin"
 SYNTHETIC_OUT="/tmp/vegeta-test-synthetic-merged.json"
-rm -f "${SYNTHETIC_CSV}" "${SYNTHETIC_BIN}" "${SYNTHETIC_OUT}"
+rm -f "${SYNTHETIC_CSV_A}" "${SYNTHETIC_CSV_B}" "${SYNTHETIC_BIN_A}" "${SYNTHETIC_BIN_B}" "${SYNTHETIC_OUT}"
 
-# Generate 100 CSV lines with all 12 vegeta columns:
-# timestamp_ns, status_code, latency_ns, bytes_out, bytes_in, error,
+# CSV columns: timestamp_ns, status_code, latency_ns, bytes_out, bytes_in, error,
 # body(base64), attack_name, seq, method, url, headers(base64)
-# All within the same second (timestamp = 1700000000000000000 + i*1000000 to space within 1s)
 BASE_TS=1700000000000000000
-for i in $(seq 1 100); do
-    TS=$((BASE_TS + i * 1000000))  # spread within same second
-    LATENCY=$((i * 1000000))       # 1ms to 100ms in nanoseconds
-    echo "${TS},200,${LATENCY},0,13,,,,${i},GET,http://localhost/,"
-done > "${SYNTHETIC_CSV}"
 
-# Convert CSV to vegeta binary (gob) format
-vegeta encode --to gob < "${SYNTHETIC_CSV}" > "${SYNTHETIC_BIN}"
+# --- Pod A: odd-millisecond latencies ---
+SEQ=0
 
-if [[ ! -s "${SYNTHETIC_BIN}" ]]; then
-    echo "ERROR: Failed to create synthetic .bin file"
+# Bucket 0 (edge — will be dropped): 10 padding requests
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + i * 1000000))
+    echo "${TS},200,5000000,0,13,,,,${SEQ},GET,http://localhost/,"
+done > "${SYNTHETIC_CSV_A}"
+
+# Bucket 1 (interior): 50 requests with latencies 1ms, 3ms, 5ms, ..., 99ms
+for i in $(seq 1 50); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 1000000000 + i * 1000000))
+    LATENCY=$(( (2 * i - 1) * 1000000 ))  # 1ms, 3ms, 5ms, ..., 99ms
+    echo "${TS},200,${LATENCY},0,13,,,,${SEQ},GET,http://localhost/,"
+done >> "${SYNTHETIC_CSV_A}"
+
+# Bucket 2 (edge — will be dropped): 10 padding requests
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 2000000000 + i * 1000000))
+    echo "${TS},200,5000000,0,13,,,,${SEQ},GET,http://localhost/,"
+done >> "${SYNTHETIC_CSV_A}"
+
+# --- Pod B: even-millisecond latencies ---
+SEQ=0
+
+# Bucket 0 (edge — will be dropped): 10 padding requests
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + (i + 10) * 1000000))  # offset slightly so timestamps don't collide
+    echo "${TS},200,5000000,0,13,,,,${SEQ},GET,http://localhost/,"
+done > "${SYNTHETIC_CSV_B}"
+
+# Bucket 1 (interior): 50 requests with latencies 2ms, 4ms, 6ms, ..., 100ms
+for i in $(seq 1 50); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 1000000000 + (i + 50) * 1000000))  # offset within same second
+    LATENCY=$(( 2 * i * 1000000 ))  # 2ms, 4ms, 6ms, ..., 100ms
+    echo "${TS},200,${LATENCY},0,13,,,,${SEQ},GET,http://localhost/,"
+done >> "${SYNTHETIC_CSV_B}"
+
+# Bucket 2 (edge — will be dropped): 10 padding requests
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 2000000000 + (i + 10) * 1000000))
+    echo "${TS},200,5000000,0,13,,,,${SEQ},GET,http://localhost/,"
+done >> "${SYNTHETIC_CSV_B}"
+
+# Convert both CSVs to vegeta binary format
+vegeta encode --to gob < "${SYNTHETIC_CSV_A}" > "${SYNTHETIC_BIN_A}"
+vegeta encode --to gob < "${SYNTHETIC_CSV_B}" > "${SYNTHETIC_BIN_B}"
+
+if [[ ! -s "${SYNTHETIC_BIN_A}" ]] || [[ ! -s "${SYNTHETIC_BIN_B}" ]]; then
+    echo "ERROR: Failed to create synthetic .bin files"
     exit 1
 fi
 
-# Run merge on the synthetic data
-"${MODULE_DIR}/merge/merge.sh" --output-file "${SYNTHETIC_OUT}" "${SYNTHETIC_BIN}"
+# Merge both pod files — this is the actual multi-pod merge scenario
+"${MODULE_DIR}/merge/merge.sh" --output-file "${SYNTHETIC_OUT}" "${SYNTHETIC_BIN_A}" "${SYNTHETIC_BIN_B}"
 
 if [[ ! -s "${SYNTHETIC_OUT}" ]]; then
-    echo "ERROR: Merge of synthetic data produced no output"
+    echo "ERROR: Merge of synthetic multi-pod data produced no output"
     exit 1
 fi
 
-# Should be exactly 1 line (all requests in the same second)
+# Should be exactly 1 line (the interior bucket; edge buckets are dropped)
 SYNTH_LINES=$(wc -l < "${SYNTHETIC_OUT}")
 if [[ "${SYNTH_LINES}" -ne 1 ]]; then
-    echo "ERROR: Expected 1 line from synthetic data, got ${SYNTH_LINES}"
+    echo "ERROR: Expected 1 line from synthetic multi-pod data (after edge trim), got ${SYNTH_LINES}"
     cat "${SYNTHETIC_OUT}"
     exit 1
 fi
 
 SYNTH_LINE=$(cat "${SYNTHETIC_OUT}")
 
-# Verify rps = 100
+# Verify rps = 100 (50 from pod A + 50 from pod B)
 SYNTH_RPS=$(echo "$SYNTH_LINE" | jq -r '.rps')
 if [[ "${SYNTH_RPS}" -ne 100 ]]; then
-    echo "ERROR: Expected rps=100, got ${SYNTH_RPS}"
+    echo "ERROR: Expected rps=100 (50+50), got ${SYNTH_RPS}"
     echo "$SYNTH_LINE"
     exit 1
 fi
@@ -543,7 +586,8 @@ if [[ "${SYNTH_200}" -ne 100 ]]; then
     exit 1
 fi
 
-# Verify latency percentiles
+# Verify latency percentiles across the combined (interleaved) data
+# Combined sorted latencies: 1ms, 2ms, 3ms, ..., 100ms
 # p25 = sorted[25] = 25ms = 25000000ns
 SYNTH_P25=$(echo "$SYNTH_LINE" | jq -r '.latency.p25')
 if [[ "${SYNTH_P25}" -ne 25000000 ]]; then
@@ -568,7 +612,7 @@ if [[ "${SYNTH_P99}" -ne 99000000 ]]; then
     exit 1
 fi
 
-# Verify bytes_in.sum = 13 * 100 = 1300
+# Verify bytes_in.sum = 13 * 100 = 1300 (50 from each pod, 13 bytes each)
 SYNTH_BYTES_IN=$(echo "$SYNTH_LINE" | jq -r '.bytes_in.sum')
 if [[ "${SYNTH_BYTES_IN}" -ne 1300 ]]; then
     echo "ERROR: Expected bytes_in.sum=1300, got ${SYNTH_BYTES_IN}"
@@ -576,7 +620,7 @@ if [[ "${SYNTH_BYTES_IN}" -ne 1300 ]]; then
     exit 1
 fi
 
-echo "✓ Merge latency percentile logic test passed"
+echo "✓ Multi-pod merge latency percentile logic test passed"
 
 echo ""
 echo "All Vegeta module tests passed!"
