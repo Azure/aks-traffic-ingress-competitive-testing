@@ -117,6 +117,9 @@ docker run <image> module/vegeta/install
 docker run <image> module/vegeta/run --target-url http://localhost:8080 --rate 50 --duration 30s
 docker run <image> module/kind/output host_port
 
+# Merge multiple vegeta .bin files into per-second JSON
+docker run <image> merge --output-file merged.json pod0.bin pod1.bin pod2.bin
+
 # Run the server
 docker run -p 3333:3333 <image> server
 ```
@@ -138,6 +141,7 @@ This repository is a collection of modules that follow consistent patterns to cr
 - /install contains a `install.sh` script that installs the required tool
 - /run contains `run.sh` that run the tool. These can be functions and modules can contain many different functions for running
 - /output collects the output of the run into a standardized json file
+- /merge (vegeta only) merges multiple raw `.bin` files from parallel pods into unified per-second JSON output
 - /test contains a `test.sh` script that tests and validates the module is working correctly
 
 Note: all modules expect to be **run from the root directory of this project**.
