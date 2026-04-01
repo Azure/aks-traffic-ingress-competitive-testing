@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] - 2026-04-01
+
+### Added
+
+- Multi-pod merge script (`modules/vegeta/merge/merge.sh`) that combines multiple vegeta `.bin` files into per-second JSON output using timestamp-based bucketing
+- CI `test-merge` job that validates multi-pod merge by running 4 simultaneous vegeta attacks and verifying merged output (RPS, code histograms, JSON structure)
+- `gawk` added to Dockerfile base image for merge script support
+- `merge` command added to Docker entrypoint routing
+
+### Changed
+
+- `modules/vegeta/run/run.sh` now uses a streaming tee pipeline (`vegeta attack | tee binfile | vegeta encode | jaggr`) instead of writing to a temp file then replaying, saving raw `.bin` results alongside jaggr output
+- Added `set -o pipefail` to `modules/vegeta/run/run.sh` and `modules/vegeta/merge/merge.sh` so pipeline failures propagate correctly
+- Expanded vegeta module tests (`.bin` file production, per-second bucketing, single-file merge, multi-file merge, synthetic percentile verification)
+
 ## [0.0.8] - 2026-03-30
 
 ### Changed
