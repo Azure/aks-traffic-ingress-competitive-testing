@@ -8,7 +8,7 @@
 # Note: The first and last second-buckets may be partial (vegeta doesn't start/stop exactly
 # on second boundaries). Consumers should account for this when validating RPS values.
 
-set -e
+set -eo pipefail
 
 show_usage() {
     echo "Usage: $0 [--output-file FILE] <bin_file1> [bin_file2 ...]"
