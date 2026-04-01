@@ -211,14 +211,22 @@ jobs:
             -e PORT=9998 \
             ghcr.io/azure/aks-traffic-ingress-competitive-testing:8aba95806ff611e9939257e2c3c9f53b3af5f7a2
 
+          SERVER_READY=false
           for i in {1..10}; do
             if curl -s http://localhost:9998 > /dev/null; then
               echo "Test server ready"
+              SERVER_READY=true
               break
             fi
             echo "Waiting for server... (attempt $i/10)"
             sleep 2
           done
+
+          if [ "$SERVER_READY" != "true" ]; then
+            echo "ERROR: Test server failed to start after 10 attempts"
+            docker logs merge-test-server 2>&1 || true
+            exit 1
+          fi
 
       - name: Run 4 simultaneous vegeta attacks
         run: |
