@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     jq \
+    gawk \
     unzip \
     bash \
     ca-certificates \
@@ -103,6 +104,7 @@ RUN printf '%s\n' \
     '  echo "  install/<name> [args...]                   Run an install script (e.g. install/nginx)"' \
     '  echo "  setup/<name> [args...]                     Run a setup script (e.g. setup/ingress)"' \
     '  echo "  module/<name>/<action> [args...]           Run a module script (e.g. module/vegeta/run)"' \
+    '  echo "  merge [args...]                            Merge vegeta .bin files (modules/vegeta/merge/merge.sh)"' \
     '  echo "  server                                     Start the HTTP server"' \
     '  echo "  bash -c \"...\"                              Run a custom command"' \
     '  echo ""' \
@@ -171,6 +173,9 @@ RUN printf '%s\n' \
     '    done' \
     '    exit 1' \
     '  fi' \
+    'elif [ "$1" = "merge" ]; then' \
+    '  shift' \
+    '  exec bash /app/modules/vegeta/merge/merge.sh "$@"' \
     'else' \
     '  exec "$@"' \
     'fi' \
