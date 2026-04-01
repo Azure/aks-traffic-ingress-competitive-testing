@@ -106,7 +106,7 @@ merge_results() {
             code_hist = code_hist "\"" code "\":" code_counts[code]
         }
 
-        printf "{\"rps\":%d,\"code\":{\"hist\":{%s}},\"latency\":{\"p25\":%s,\"p50\":%s,\"p99\":%s},\"bytes_in\":{\"sum\":%s},\"bytes_out\":{\"sum\":%s}}\n", \
+        printf "{\"rps\":%d,\"code\":{\"hist\":{%s}},\"latency\":{\"p25\":%d,\"p50\":%d,\"p99\":%d},\"bytes_in\":{\"sum\":%d},\"bytes_out\":{\"sum\":%d}}\n", \
             bucket_count, code_hist, p25_val, p50_val, p99_val, bytes_in_sum, bytes_out_sum
     }
 
