@@ -359,26 +359,33 @@ while IFS= read -r line; do
 done < "${MERGE_OUTPUT}"
 
 # Verify line count roughly matches the 10s test duration
-# merge.sh drops the first and last partial buckets, so expect ~8 lines from a 10s test
+# The first and last second-buckets may be partial, so expect ~10 lines from a 10s test
 MERGE_LINE_COUNT=$(wc -l < "${MERGE_OUTPUT}")
 echo "Merge output has ${MERGE_LINE_COUNT} lines (second-buckets) for a 10s test"
-if [[ "${MERGE_LINE_COUNT}" -lt 6 ]]; then
-    echo "ERROR: Expected at least 6 second-buckets for a 10s test (after edge trim), got ${MERGE_LINE_COUNT}"
+if [[ "${MERGE_LINE_COUNT}" -lt 8 ]]; then
+    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${MERGE_LINE_COUNT}"
     cat "${MERGE_OUTPUT}"
     exit 1
 fi
 
-# Verify each line's code histogram sum matches rps, and rps is reasonable
-# merge.sh already drops partial edge buckets, so all lines should be complete
+# Verify each line's code histogram sum matches rps
+# Skip first and last lines when checking RPS bounds (they may be partial edge buckets)
+MERGE_TOTAL_LINES=$(wc -l < "${MERGE_OUTPUT}")
+MERGE_LINE_NUM=0
 MIN_REASONABLE_RPS=38  # 0.75x the target rate
 MAX_REASONABLE_RPS=63  # 1.25x the target rate
 while IFS= read -r line; do
+    MERGE_LINE_NUM=$((MERGE_LINE_NUM + 1))
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
     if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
         echo "ERROR: Merge code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
         echo "Line: ${line}"
         exit 1
+    fi
+    # Skip RPS bounds check on first and last lines (partial edge buckets)
+    if [[ "${MERGE_LINE_NUM}" -eq 1 ]] || [[ "${MERGE_LINE_NUM}" -eq "${MERGE_TOTAL_LINES}" ]]; then
+        continue
     fi
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: Merge RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
@@ -427,26 +434,33 @@ fi
 MULTI_MERGE_OUTPUT=$("${MODULE_DIR}/merge/merge.sh" "${BIN_FILE_1}" "${BIN_FILE_2}")
 
 # Verify line count roughly matches the 10s test duration
-# merge.sh drops the first and last partial buckets, so expect ~8 lines from a 10s test
+# The first and last second-buckets may be partial, so expect ~10 lines from a 10s test
 MULTI_MERGE_LINE_COUNT=$(echo "$MULTI_MERGE_OUTPUT" | wc -l)
 echo "Multi-file merge output has ${MULTI_MERGE_LINE_COUNT} lines (second-buckets) for a 10s test"
-if [[ "${MULTI_MERGE_LINE_COUNT}" -lt 6 ]]; then
-    echo "ERROR: Expected at least 6 second-buckets for a 10s test (after edge trim), got ${MULTI_MERGE_LINE_COUNT}"
+if [[ "${MULTI_MERGE_LINE_COUNT}" -lt 8 ]]; then
+    echo "ERROR: Expected at least 8 second-buckets for a 10s test, got ${MULTI_MERGE_LINE_COUNT}"
     echo "$MULTI_MERGE_OUTPUT"
     exit 1
 fi
 
-# Verify each line's code histogram sum matches rps, and rps is reasonable
-# merge.sh already drops partial edge buckets, so all lines should be complete
+# Verify each line's code histogram sum matches rps
+# Skip first and last lines when checking RPS bounds (they may be partial edge buckets)
+MULTI_TOTAL_LINES=$(echo "$MULTI_MERGE_OUTPUT" | wc -l)
+MULTI_LINE_NUM=0
 MIN_REASONABLE_RPS=75   # 0.75x the combined target rate of ~100
 MAX_REASONABLE_RPS=125  # 1.25x the combined target rate of ~100
 while IFS= read -r line; do
+    MULTI_LINE_NUM=$((MULTI_LINE_NUM + 1))
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     CODE_SUM=$(echo "$line" | jq -r '[.code.hist | to_entries[] | .value] | add // 0')
     if [[ "${CODE_SUM}" -ne "${RPS_VAL}" ]]; then
         echo "ERROR: Multi-merge code histogram sum (${CODE_SUM}) does not match rps (${RPS_VAL})"
         echo "Line: ${line}"
         exit 1
+    fi
+    # Skip RPS bounds check on first and last lines (partial edge buckets)
+    if [[ "${MULTI_LINE_NUM}" -eq 1 ]] || [[ "${MULTI_LINE_NUM}" -eq "${MULTI_TOTAL_LINES}" ]]; then
+        continue
     fi
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: Multi-merge RPS value ${RPS_VAL} is unreasonably high (expected near 100, max ${MAX_REASONABLE_RPS})"
@@ -470,14 +484,14 @@ echo "16. Testing merge.sh latency percentile logic with multi-pod synthetic dat
 # across the combined data.
 #
 # Strategy: Each pod produces 3 second-buckets (edge, interior, edge).
-# After merge drops the first and last buckets, the interior bucket will contain
-# the combined requests from both pods.
+# The interior bucket (second 1) will contain the combined requests from both pods.
+# The edge buckets (seconds 0 and 2) have fewer requests and are expected to be partial.
 #
 # Pod A interior bucket: 50 requests with latencies 1ms, 3ms, 5ms, ..., 99ms (odd ms)
 # Pod B interior bucket: 50 requests with latencies 2ms, 4ms, 6ms, ..., 100ms (even ms)
 # Combined: 100 requests with latencies 1ms, 2ms, 3ms, ..., 100ms
 #
-# Expected percentiles (same as single-source case):
+# Expected percentiles for the interior bucket:
 #   p25 = sorted[int(100 * 0.25)] = sorted[25] = 25ms = 25000000ns
 #   p50 = sorted[int(100 * 0.50)] = sorted[50] = 50ms = 50000000ns
 #   p99 = sorted[int(100 * 0.99)] = sorted[99] = 99ms = 99000000ns
@@ -496,7 +510,7 @@ BASE_TS=1700000000000000000
 # --- Pod A: odd-millisecond latencies ---
 SEQ=0
 
-# Bucket 0 (edge — will be dropped): 10 padding requests
+# Bucket 0 (edge): 10 padding requests
 for i in $(seq 1 10); do
     SEQ=$((SEQ + 1))
     TS=$((BASE_TS + i * 1000000))
@@ -511,7 +525,7 @@ for i in $(seq 1 50); do
     echo "${TS},200,${LATENCY},0,13,,,,${SEQ},GET,http://localhost/,"
 done >> "${SYNTHETIC_CSV_A}"
 
-# Bucket 2 (edge — will be dropped): 10 padding requests
+# Bucket 2 (edge): 10 padding requests
 for i in $(seq 1 10); do
     SEQ=$((SEQ + 1))
     TS=$((BASE_TS + 2000000000 + i * 1000000))
@@ -521,7 +535,7 @@ done >> "${SYNTHETIC_CSV_A}"
 # --- Pod B: even-millisecond latencies ---
 SEQ=0
 
-# Bucket 0 (edge — will be dropped): 10 padding requests
+# Bucket 0 (edge): 10 padding requests
 for i in $(seq 1 10); do
     SEQ=$((SEQ + 1))
     TS=$((BASE_TS + (i + 10) * 1000000))  # offset slightly so timestamps don't collide
@@ -536,7 +550,7 @@ for i in $(seq 1 50); do
     echo "${TS},200,${LATENCY},0,13,,,,${SEQ},GET,http://localhost/,"
 done >> "${SYNTHETIC_CSV_B}"
 
-# Bucket 2 (edge — will be dropped): 10 padding requests
+# Bucket 2 (edge): 10 padding requests
 for i in $(seq 1 10); do
     SEQ=$((SEQ + 1))
     TS=$((BASE_TS + 2000000000 + (i + 10) * 1000000))
@@ -560,15 +574,16 @@ if [[ ! -s "${SYNTHETIC_OUT}" ]]; then
     exit 1
 fi
 
-# Should be exactly 1 line (the interior bucket; edge buckets are dropped)
+# Should be exactly 3 lines (edge bucket, interior bucket, edge bucket)
 SYNTH_LINES=$(wc -l < "${SYNTHETIC_OUT}")
-if [[ "${SYNTH_LINES}" -ne 1 ]]; then
-    echo "ERROR: Expected 1 line from synthetic multi-pod data (after edge trim), got ${SYNTH_LINES}"
+if [[ "${SYNTH_LINES}" -ne 3 ]]; then
+    echo "ERROR: Expected 3 lines from synthetic multi-pod data, got ${SYNTH_LINES}"
     cat "${SYNTHETIC_OUT}"
     exit 1
 fi
 
-SYNTH_LINE=$(cat "${SYNTHETIC_OUT}")
+# Validate the interior bucket (line 2) which has the known combined data
+SYNTH_LINE=$(sed -n '2p' "${SYNTHETIC_OUT}")
 
 # Verify rps = 100 (50 from pod A + 50 from pod B)
 SYNTH_RPS=$(echo "$SYNTH_LINE" | jq -r '.rps')

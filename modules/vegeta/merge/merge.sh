@@ -5,9 +5,8 @@
 # on saved/replayed data and correctly interleaves results from pods that started at
 # slightly different times.
 #
-# The first and last second-buckets are dropped because timestamp-based bucketing produces
-# partial edge buckets (vegeta doesn't start/stop exactly on second boundaries). Only
-# complete interior buckets are emitted so results accurately represent the target load.
+# Note: The first and last second-buckets may be partial (vegeta doesn't start/stop exactly
+# on second boundaries). Consumers should account for this when validating RPS values.
 
 set -e
 
@@ -75,8 +74,7 @@ echo "Merging ${#bin_files[@]} .bin file(s)..." >&2
 # 1. vegeta encode --to csv on all input files (vegeta round-robins through them)
 # 2. Sort by timestamp column (column 1, nanoseconds since epoch)
 # 3. gawk to bucket by second and compute per-bucket aggregates
-# 4. Drop first and last lines (partial edge buckets)
-# 5. Output one JSON line per complete second-bucket
+# 4. Output one JSON line per second-bucket
 merge_results() {
     vegeta encode --to csv "${bin_files[@]}" | \
     sort -t, -k1,1n | \
@@ -156,8 +154,7 @@ merge_results() {
     END {
         flush_bucket()
     }
-    ' | \
-    sed '1d;$d'
+    '
 }
 
 if [[ -n "$output_file" ]]; then
