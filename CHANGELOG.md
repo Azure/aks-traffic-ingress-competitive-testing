@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.10] - 2026-04-07
+
+### Changed
+
+- Increased wait timeouts in `scripts/setup/gateway.sh` and `scripts/setup/ingress.sh` to 30 minutes for large-scale deployments (e.g., 50,000 replicas), including resource creation checks, readiness polling, and Helm install retries
+- Removed `--timeout` from `kubectl rollout status` in both setup scripts, relying on Kubernetes' built-in `progressDeadlineSeconds` (default 600s) to detect stalls while allowing arbitrarily long rollouts that are making progress
+- Gateway and HTTPRoute readiness checks now fail hard instead of silently continuing when not ready
+
+### Fixed
+
+- Added `kubectl wait` for Istio gateway proxy pod in `scripts/setup/gateway.sh` to prevent port-forward failures when the proxy pod is still Pending
+
 ## [0.0.9] - 2026-04-01
 
 ### Added
