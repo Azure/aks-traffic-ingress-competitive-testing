@@ -215,45 +215,6 @@ kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE"
 # ---------------------------------------------------------------------------
 
 echo "Waiting for server deployment to be ready..."
-kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE" --timeout=300s
-
-echo "Waiting for all server pods to be ready..."
-for i in {1..36}; do
-    ready_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | grep -o "True" | wc -l)
-    total_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-        --no-headers | wc -l)
-
-    echo "Ready pods: $ready_pods/$total_pods"
-
-    if [ "$ready_pods" -eq "$total_pods" ] && [ "$total_pods" -gt 0 ]; then
-        echo "✓ All server pods are ready"
-        break
-    fi
-
-    if [ "$i" -eq 36 ]; then
-        echo "ERROR: Server pods not ready after 6 minutes"
-        echo "Pods that are not ready:"
-        kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-            -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=='Ready')].status,REASON:.status.containerStatuses[0].state.waiting.reason"
-
-        not_ready_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
-            | grep -v "True" | cut -d' ' -f1)
-
-        if [ -n "$not_ready_pods" ]; then
-            for pod in $not_ready_pods; do
-                echo "--- Pod: $pod ---"
-                kubectl describe pod "$pod" -n "$NAMESPACE" | tail -20
-                echo "--- End Pod: $pod ---"
-            done
-        fi
-
-        exit 1
-    fi
-
-    echo "Waiting for server pods to be ready... (attempt $i/36)"
-    sleep 10
-done
+kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE" --timeout=1800s
 
 echo "Server deployed successfully with Ingress (class: $INGRESS_CLASS)"
