@@ -258,4 +258,11 @@ kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE"
 echo "Waiting for server deployment to be ready..."
 kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE"
 
+# Wait for the Istio gateway proxy pod to be ready. The gateway controller
+# creates a separate pod for the proxy which may still be Pending after the
+# server deployment has rolled out.
+echo "Waiting for Istio gateway pod to be ready..."
+kubectl wait --for=condition=Ready pod \
+    -l "gateway.networking.k8s.io/gateway-name=$RELEASE_NAME" -n "$NAMESPACE" --timeout=300s
+
 echo "Server deployed successfully with Gateway API (class: $GATEWAY_CLASS)"
