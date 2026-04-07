@@ -154,17 +154,17 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "Waiting for Ingress resource to be created..."
-for i in {1..30}; do
+for i in {1..360}; do
     if kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
         echo "Ingress found: $RELEASE_NAME"
         break
     fi
-    if [ "$i" -eq 30 ]; then
-        echo "ERROR: Ingress resource was not created after 60 seconds"
+    if [ "$i" -eq 360 ]; then
+        echo "ERROR: Ingress resource was not created after 30 minutes"
         exit 1
     fi
-    echo "Waiting for Ingress resource... (attempt $i/30)"
-    sleep 2
+    echo "Waiting for Ingress resource... (attempt $i/360)"
+    sleep 5
 done
 
 # ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ done
 
 echo "Waiting for Ingress to be reachable..."
 ingress_ready=""
-for i in {1..60}; do
+for i in {1..360}; do
     # Check for a LoadBalancer address on the Ingress resource
     ingress_address=$(kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE" \
         -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
@@ -199,7 +199,7 @@ for i in {1..60}; do
         break
     fi
 
-    echo "Waiting for Ingress to be reachable... (attempt $i/60)"
+    echo "Waiting for Ingress to be reachable... (attempt $i/360)"
     sleep 5
 done
 
@@ -215,6 +215,6 @@ kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE"
 # ---------------------------------------------------------------------------
 
 echo "Waiting for server deployment to be ready..."
-kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE" --timeout=1800s
+kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE"
 
 echo "Server deployed successfully with Ingress (class: $INGRESS_CLASS)"
