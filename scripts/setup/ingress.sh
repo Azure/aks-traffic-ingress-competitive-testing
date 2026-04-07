@@ -133,19 +133,20 @@ echo "  Tolerations File: ${TOLERATIONS_FILE:-<none>}"
 # Retry helm install to handle transient webhook readiness issues.
 # The ingress-nginx admission webhook Service can take a few extra seconds
 # for kube-proxy iptables rules to propagate even after the controller pod
-# is Ready, causing "connection refused" on the first attempt.
+# is Ready, causing "connection refused" on the first attempt. At large scale
+# (many nodes / many iptables rules) this can take significantly longer.
 HELM_INSTALLED=false
-for attempt in $(seq 1 5); do
+for attempt in $(seq 1 360); do
     if helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" "${HELM_ARGS[@]}"; then
         HELM_INSTALLED=true
         break
     fi
-    echo "Helm install attempt $attempt/5 failed, retrying in 5s..."
+    echo "Helm install attempt $attempt/360 failed, retrying in 5s..."
     sleep 5
 done
 
 if [ "$HELM_INSTALLED" = false ]; then
-    echo "ERROR: Helm install failed after 5 attempts"
+    echo "ERROR: Helm install failed after 30 minutes"
     exit 1
 fi
 
