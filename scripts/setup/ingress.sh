@@ -133,19 +133,20 @@ echo "  Tolerations File: ${TOLERATIONS_FILE:-<none>}"
 # Retry helm install to handle transient webhook readiness issues.
 # The ingress-nginx admission webhook Service can take a few extra seconds
 # for kube-proxy iptables rules to propagate even after the controller pod
-# is Ready, causing "connection refused" on the first attempt.
+# is Ready, causing "connection refused" on the first attempt. At large scale
+# (many nodes / many iptables rules) this can take significantly longer.
 HELM_INSTALLED=false
-for attempt in $(seq 1 5); do
+for attempt in $(seq 1 360); do
     if helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" "${HELM_ARGS[@]}"; then
         HELM_INSTALLED=true
         break
     fi
-    echo "Helm install attempt $attempt/5 failed, retrying in 5s..."
+    echo "Helm install attempt $attempt/360 failed, retrying in 5s..."
     sleep 5
 done
 
 if [ "$HELM_INSTALLED" = false ]; then
-    echo "ERROR: Helm install failed after 5 attempts"
+    echo "ERROR: Helm install failed after 30 minutes"
     exit 1
 fi
 
@@ -154,17 +155,17 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "Waiting for Ingress resource to be created..."
-for i in {1..30}; do
+for i in {1..360}; do
     if kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
         echo "Ingress found: $RELEASE_NAME"
         break
     fi
-    if [ "$i" -eq 30 ]; then
-        echo "ERROR: Ingress resource was not created after 60 seconds"
+    if [ "$i" -eq 360 ]; then
+        echo "ERROR: Ingress resource was not created after 30 minutes"
         exit 1
     fi
-    echo "Waiting for Ingress resource... (attempt $i/30)"
-    sleep 2
+    echo "Waiting for Ingress resource... (attempt $i/360)"
+    sleep 5
 done
 
 # ---------------------------------------------------------------------------
@@ -179,7 +180,7 @@ done
 
 echo "Waiting for Ingress to be reachable..."
 ingress_ready=""
-for i in {1..60}; do
+for i in {1..360}; do
     # Check for a LoadBalancer address on the Ingress resource
     ingress_address=$(kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE" \
         -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
@@ -199,7 +200,7 @@ for i in {1..60}; do
         break
     fi
 
-    echo "Waiting for Ingress to be reachable... (attempt $i/60)"
+    echo "Waiting for Ingress to be reachable... (attempt $i/360)"
     sleep 5
 done
 
@@ -215,45 +216,6 @@ kubectl get ingress "$RELEASE_NAME" -n "$NAMESPACE"
 # ---------------------------------------------------------------------------
 
 echo "Waiting for server deployment to be ready..."
-kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE" --timeout=300s
-
-echo "Waiting for all server pods to be ready..."
-for i in {1..36}; do
-    ready_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | grep -o "True" | wc -l)
-    total_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-        --no-headers | wc -l)
-
-    echo "Ready pods: $ready_pods/$total_pods"
-
-    if [ "$ready_pods" -eq "$total_pods" ] && [ "$total_pods" -gt 0 ]; then
-        echo "✓ All server pods are ready"
-        break
-    fi
-
-    if [ "$i" -eq 36 ]; then
-        echo "ERROR: Server pods not ready after 6 minutes"
-        echo "Pods that are not ready:"
-        kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-            -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=='Ready')].status,REASON:.status.containerStatuses[0].state.waiting.reason"
-
-        not_ready_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
-            | grep -v "True" | cut -d' ' -f1)
-
-        if [ -n "$not_ready_pods" ]; then
-            for pod in $not_ready_pods; do
-                echo "--- Pod: $pod ---"
-                kubectl describe pod "$pod" -n "$NAMESPACE" | tail -20
-                echo "--- End Pod: $pod ---"
-            done
-        fi
-
-        exit 1
-    fi
-
-    echo "Waiting for server pods to be ready... (attempt $i/36)"
-    sleep 10
-done
+kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE"
 
 echo "Server deployed successfully with Ingress (class: $INGRESS_CLASS)"

@@ -173,10 +173,14 @@ done
 # False even though the Gateway is fully functional. We check for either:
 #   - Programmed=True (cloud / LoadBalancer environments), or
 #   - The gateway service exists with a port and the listener is programmed (Kind / bare-metal)
+#
+# kubectl wait --for=condition=Programmed does not work here because in Kind the
+# gateway-level Programmed condition stays False — kubectl wait would block for
+# the full timeout before the fallback ever runs.
 
-echo "Checking Gateway status..."
+echo "Waiting for Gateway to be ready..."
 gateway_ready=""
-for i in {1..60}; do
+for i in {1..360}; do
     # Check if the Gateway is fully programmed (cloud environments)
     gateway_programmed=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
         -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null || echo "")
@@ -186,13 +190,8 @@ for i in {1..60}; do
         break
     fi
 
-    # Check if the gateway service exists with the listener port and the
-    # listener is programmed. Istio names the auto-created service
-    # "{gateway}-istio". The service has multiple ports (e.g. 15021 for health
-    # checks) — we check specifically for the gateway listener port.
-    # In Kind the service type is LoadBalancer (pending) but the port is still
-    # reachable via the cluster — so having the correct port + a programmed
-    # listener is sufficient to consider the gateway ready.
+    # Kind / bare-metal fallback: check listener-level condition + service port.
+    # Istio names the auto-created service "{gateway}-istio".
     listener_port=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
         -o jsonpath='{.spec.listeners[?(@.name=="http")].port}' 2>/dev/null || echo "")
     gateway_svc_port=$(kubectl get svc "${RELEASE_NAME}-istio" -n "$NAMESPACE" \
@@ -205,104 +204,65 @@ for i in {1..60}; do
         break
     fi
 
-    # If status field is completely empty the controller may not be installed
-    gateway_status=$(kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" \
-        -o jsonpath='{.status}' 2>/dev/null || echo "")
-    if [ -z "$gateway_status" ] && [ "$i" -ge 10 ]; then
-        echo "WARNING: Gateway has no status after $((i * 5)) seconds — a Gateway API controller may not be installed"
-        echo "Skipping Gateway status checks"
-        break
+    if [ "$i" -eq 360 ]; then
+        echo "ERROR: Gateway is not ready after 30 minutes"
+        kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE" -o yaml || true
+        exit 1
     fi
 
-    echo "Waiting for Gateway to be ready... (attempt $i/60)"
+    echo "Waiting for Gateway to be ready... (attempt $i/360)"
     sleep 5
 done
 
 echo "Gateway configuration:"
 kubectl get gateway "$RELEASE_NAME" -n "$NAMESPACE"
 
-if [ "$gateway_ready" = "true" ]; then
-    # ---------------------------------------------------------------------------
-    # Wait for HTTPRoute to be accepted and resolved (only if controller is active)
-    # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Wait for HTTPRoute to be accepted and resolved
+# ---------------------------------------------------------------------------
 
-    echo "Checking HTTPRoute status..."
-    httproute_accepted=""
-    httproute_resolved=""
-    for i in {1..60}; do
-        httproute_accepted=$(kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE" \
-            -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
-        httproute_resolved=$(kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE" \
-            -o jsonpath='{.status.parents[0].conditions[?(@.type=="ResolvedRefs")].status}' 2>/dev/null || echo "")
+# HTTPRoute conditions are nested under .status.parents[0].conditions, so
+# kubectl wait --for=condition= does not work here.
 
-        if [ "$httproute_accepted" = "True" ] && [ "$httproute_resolved" = "True" ]; then
-            echo "✓ HTTPRoute is accepted and refs are resolved"
-            break
-        fi
-        echo "Waiting for HTTPRoute to be ready... (attempt $i/60)"
-        sleep 5
-    done
+echo "Waiting for HTTPRoute to be ready..."
+for i in {1..360}; do
+    httproute_accepted=$(kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE" \
+        -o jsonpath='{.status.parents[0].conditions[?(@.type=="Accepted")].status}' 2>/dev/null || echo "")
+    httproute_resolved=$(kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE" \
+        -o jsonpath='{.status.parents[0].conditions[?(@.type=="ResolvedRefs")].status}' 2>/dev/null || echo "")
 
-    if [ "$httproute_accepted" != "True" ] || [ "$httproute_resolved" != "True" ]; then
-        echo "ERROR: HTTPRoute is not ready after 5 minutes"
+    if [ "$httproute_accepted" = "True" ] && [ "$httproute_resolved" = "True" ]; then
+        echo "✓ HTTPRoute is accepted and refs are resolved"
+        break
+    fi
+
+    if [ "$i" -eq 360 ]; then
+        echo "ERROR: HTTPRoute is not ready after 30 minutes"
         echo "HTTPRoute accepted: $httproute_accepted, resolved: $httproute_resolved"
         kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE" \
             -o jsonpath='{.status.parents[0].conditions}' | jq . || echo "Could not get HTTPRoute conditions"
         exit 1
     fi
 
-    echo "HTTPRoute configuration:"
-    kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE"
-else
-    echo "Skipping HTTPRoute status checks (no active Gateway controller detected)"
-    echo "HTTPRoute configuration:"
-    kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE"
-fi
+    echo "Waiting for HTTPRoute to be ready... (attempt $i/360)"
+    sleep 5
+done
+
+echo "HTTPRoute configuration:"
+kubectl get httproute "$RELEASE_NAME" -n "$NAMESPACE"
 
 # ---------------------------------------------------------------------------
 # Wait for server deployment and pods to be ready
 # ---------------------------------------------------------------------------
 
 echo "Waiting for server deployment to be ready..."
-kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE" --timeout=300s
+kubectl rollout status deployment/"$RELEASE_NAME" -n "$NAMESPACE"
 
-echo "Waiting for all server pods to be ready..."
-for i in {1..36}; do
-    ready_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-        -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | grep -o "True" | wc -l)
-    total_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-        --no-headers | wc -l)
-
-    echo "Ready pods: $ready_pods/$total_pods"
-
-    if [ "$ready_pods" -eq "$total_pods" ] && [ "$total_pods" -gt 0 ]; then
-        echo "✓ All server pods are ready"
-        break
-    fi
-
-    if [ "$i" -eq 36 ]; then
-        echo "ERROR: Server pods not ready after 6 minutes"
-        echo "Pods that are not ready:"
-        kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-            -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.conditions[?(@.type=='Ready')].status,REASON:.status.containerStatuses[0].state.waiting.reason"
-
-        not_ready_pods=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=server \
-            -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
-            | grep -v "True" | cut -d' ' -f1)
-
-        if [ -n "$not_ready_pods" ]; then
-            for pod in $not_ready_pods; do
-                echo "--- Pod: $pod ---"
-                kubectl describe pod "$pod" -n "$NAMESPACE" | tail -20
-                echo "--- End Pod: $pod ---"
-            done
-        fi
-
-        exit 1
-    fi
-
-    echo "Waiting for server pods to be ready... (attempt $i/36)"
-    sleep 10
-done
+# Wait for the Istio gateway proxy pod to be ready. The gateway controller
+# creates a separate pod for the proxy which may still be Pending after the
+# server deployment has rolled out.
+echo "Waiting for Istio gateway pod to be ready..."
+kubectl wait --for=condition=Ready pod \
+    -l "gateway.networking.k8s.io/gateway-name=$RELEASE_NAME" -n "$NAMESPACE" --timeout=300s
 
 echo "Server deployed successfully with Gateway API (class: $GATEWAY_CLASS)"
