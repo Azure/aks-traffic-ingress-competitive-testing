@@ -103,6 +103,7 @@ RUN printf '%s\n' \
     '  echo "  scenario/<name> [args...]                  Run a scenario (e.g. scenario/basic_rps)"' \
     '  echo "  install/<name> [args...]                   Run an install script (e.g. install/nginx)"' \
     '  echo "  setup/<name> [args...]                     Run a setup script (e.g. setup/ingress)"' \
+    '  echo "  cleanup/<name> [args...]                   Run a cleanup script (e.g. cleanup/dns-ingresses)"' \
     '  echo "  module/<name>/<action> [args...]           Run a module script (e.g. module/vegeta/run)"' \
     '  echo "  merge [args...]                            Merge vegeta .bin files (modules/vegeta/merge/merge.sh)"' \
     '  echo "  server                                     Start the HTTP server"' \
@@ -153,6 +154,17 @@ RUN printf '%s\n' \
     '    echo "ERROR: Unknown setup script: ${name}"' \
     '    echo "Available setup scripts:"' \
     '    ls /app/scripts/setup/*.sh 2>/dev/null | sed "s|/app/scripts/setup/||;s|\.sh||" | sed "s|^|  |"' \
+    '    exit 1' \
+    '  fi' \
+    'elif [[ "$1" == cleanup/* ]]; then' \
+    '  name="${1#cleanup/}"' \
+    '  shift' \
+    '  if [ -f "/app/scripts/cleanup/${name}.sh" ]; then' \
+    '    exec bash "/app/scripts/cleanup/${name}.sh" "$@"' \
+    '  else' \
+    '    echo "ERROR: Unknown cleanup script: ${name}"' \
+    '    echo "Available cleanup scripts:"' \
+    '    ls /app/scripts/cleanup/*.sh 2>/dev/null | sed "s|/app/scripts/cleanup/||;s|\.sh||" | sed "s|^|  |"' \
     '    exit 1' \
     '  fi' \
     'elif [[ "$1" == module/* ]]; then' \
