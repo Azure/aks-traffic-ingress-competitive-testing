@@ -376,14 +376,14 @@ jobs:
       - name: Run setup/dns-${{ matrix.resource }} (count=5)
         run: |
           chmod +x scripts/setup/dns-${{ matrix.resource }}.sh
-          scripts/setup/dns-${{ matrix.resource }}.sh --count 5 --domain extdns.telescope.test
+          scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 5 --domain extdns.telescope.test
 
       - name: Assert 5 ${{ matrix.kind }} resources exist with dns-test=true
         run: |
           if [ "${{ matrix.resource }}" = "ingresses" ]; then
-            COUNT=$(kubectl get ingress -l dns-test=true -o name | wc -l)
+            COUNT=$(kubectl get ingress -n server -l dns-test=true -o name | wc -l)
           else
-            COUNT=$(kubectl get httproute.gateway.networking.k8s.io -l dns-test=true -o name | wc -l)
+            COUNT=$(kubectl get httproute.gateway.networking.k8s.io -n server -l dns-test=true -o name | wc -l)
           fi
           echo "Found ${COUNT} ${{ matrix.kind }} resources with dns-test=true"
           if [ "${COUNT}" -ne 5 ]; then
@@ -394,16 +394,16 @@ jobs:
       - name: Run cleanup/dns-${{ matrix.resource }}
         run: |
           chmod +x scripts/cleanup/dns-${{ matrix.resource }}.sh
-          scripts/cleanup/dns-${{ matrix.resource }}.sh
+          scripts/cleanup/dns-${{ matrix.resource }}.sh --namespace server
 
       - name: Assert all dns-test resources are gone
         run: |
           # --wait=false means deletes are async; poll briefly
           for i in {1..15}; do
             if [ "${{ matrix.resource }}" = "ingresses" ]; then
-              COUNT=$(kubectl get ingress -l dns-test=true -o name 2>/dev/null | wc -l)
+              COUNT=$(kubectl get ingress -n server -l dns-test=true -o name 2>/dev/null | wc -l)
             else
-              COUNT=$(kubectl get httproute.gateway.networking.k8s.io -l dns-test=true -o name 2>/dev/null | wc -l)
+              COUNT=$(kubectl get httproute.gateway.networking.k8s.io -n server -l dns-test=true -o name 2>/dev/null | wc -l)
             fi
             [ "${COUNT}" -eq 0 ] && break
             echo "Still ${COUNT} resources present, waiting... (attempt $i/15)"
@@ -417,7 +417,7 @@ jobs:
 
       - name: Negative path - missing service
         run: |
-          if scripts/setup/dns-${{ matrix.resource }}.sh --count 1 --domain extdns.telescope.test --service-name nonexistent 2>/dev/null; then
+          if scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 1 --domain extdns.telescope.test --service-name nonexistent 2>/dev/null; then
             echo "ERROR: Expected non-zero exit for missing service"
             exit 1
           fi
@@ -425,7 +425,7 @@ jobs:
 
       - name: Negative path - invalid domain
         run: |
-          if scripts/setup/dns-${{ matrix.resource }}.sh --count 1 --domain "Bad_Domain!" 2>/dev/null; then
+          if scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 1 --domain "Bad_Domain!" 2>/dev/null; then
             echo "ERROR: Expected non-zero exit for invalid domain"
             exit 1
           fi
@@ -433,7 +433,7 @@ jobs:
 
       - name: Negative path - count=0
         run: |
-          if scripts/setup/dns-${{ matrix.resource }}.sh --count 0 --domain extdns.telescope.test 2>/dev/null; then
+          if scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 0 --domain extdns.telescope.test 2>/dev/null; then
             echo "ERROR: Expected non-zero exit for count=0"
             exit 1
           fi
