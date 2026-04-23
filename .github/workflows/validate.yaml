@@ -25,7 +25,7 @@ jobs:
     name: End Status
     if: always() 
     runs-on: ubuntu-latest
-    needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts, test-merge]
+    needs: [discover-modules, test-modules, test-scenarios, validate-structure, test-charts, test-merge, test-dns-resources]
     permissions:
       contents: read
       statuses: write
@@ -319,6 +319,125 @@ jobs:
         run: |
           docker stop merge-test-server > /dev/null 2>&1 || true
           docker rm merge-test-server > /dev/null 2>&1 || true
+
+  test-dns-resources:
+    name: Test DNS ${{ matrix.resource }} scripts
+    runs-on: ubuntu-latest
+    needs: [test-modules, start-status]
+    strategy:
+      matrix:
+        include:
+          - resource: ingresses
+            traffic: ingress
+            setup_script: ./scripts/setup/ingress.sh
+            install_script: ./scripts/install/nginx.sh
+            kind: Ingress
+          - resource: httproutes
+            traffic: gateway
+            setup_script: ./scripts/setup/gateway.sh
+            install_script: ./scripts/install/istio.sh
+            kind: HTTPRoute
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Syntax check DNS scripts
+        run: |
+          bash -n scripts/setup/dns-ingresses.sh
+          bash -n scripts/cleanup/dns-ingresses.sh
+          bash -n scripts/setup/dns-httproutes.sh
+          bash -n scripts/cleanup/dns-httproutes.sh
+
+      - name: Setup Kind cluster
+        run: |
+          chmod +x ./modules/kind/install/install.sh ./modules/kind/run/run.sh
+          ./modules/kind/install/install.sh
+          ./modules/kind/run/run.sh
+
+      - name: Install ${{ matrix.traffic }} controller
+        run: |
+          chmod +x ${{ matrix.install_script }}
+          ${{ matrix.install_script }}
+
+      - name: Deploy server chart
+        run: |
+          chmod +x ${{ matrix.setup_script }}
+          ${{ matrix.setup_script }}
+
+      - name: Run setup/dns-${{ matrix.resource }} (count=5)
+        run: |
+          chmod +x scripts/setup/dns-${{ matrix.resource }}.sh
+          scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 5 --domain extdns.telescope.test
+
+      - name: Assert 5 ${{ matrix.kind }} resources exist with dns-test=true
+        run: |
+          if [ "${{ matrix.resource }}" = "ingresses" ]; then
+            COUNT=$(kubectl get ingress -n server -l dns-test=true -o name | wc -l)
+          else
+            COUNT=$(kubectl get httproute.gateway.networking.k8s.io -n server -l dns-test=true -o name | wc -l)
+          fi
+          echo "Found ${COUNT} ${{ matrix.kind }} resources with dns-test=true"
+          if [ "${COUNT}" -ne 5 ]; then
+            echo "ERROR: Expected 5, got ${COUNT}"
+            exit 1
+          fi
+
+      - name: Run cleanup/dns-${{ matrix.resource }}
+        run: |
+          chmod +x scripts/cleanup/dns-${{ matrix.resource }}.sh
+          scripts/cleanup/dns-${{ matrix.resource }}.sh --namespace server
+
+      - name: Assert all dns-test resources are gone
+        run: |
+          # --wait=false means deletes are async; poll briefly
+          for i in {1..15}; do
+            if [ "${{ matrix.resource }}" = "ingresses" ]; then
+              COUNT=$(kubectl get ingress -n server -l dns-test=true -o name 2>/dev/null | wc -l)
+            else
+              COUNT=$(kubectl get httproute.gateway.networking.k8s.io -n server -l dns-test=true -o name 2>/dev/null | wc -l)
+            fi
+            [ "${COUNT}" -eq 0 ] && break
+            echo "Still ${COUNT} resources present, waiting... (attempt $i/15)"
+            sleep 2
+          done
+          if [ "${COUNT}" -ne 0 ]; then
+            echo "ERROR: Expected 0, got ${COUNT}"
+            exit 1
+          fi
+          echo "✓ All dns-test ${{ matrix.kind }} resources removed"
+
+      - name: Negative path - missing service
+        run: |
+          if scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 1 --domain extdns.telescope.test --service-name nonexistent 2>/dev/null; then
+            echo "ERROR: Expected non-zero exit for missing service"
+            exit 1
+          fi
+          echo "✓ Correctly failed on missing service"
+
+      - name: Negative path - invalid domain
+        run: |
+          if scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 1 --domain "Bad_Domain!" 2>/dev/null; then
+            echo "ERROR: Expected non-zero exit for invalid domain"
+            exit 1
+          fi
+          echo "✓ Correctly failed on invalid domain"
+
+      - name: Negative path - count=0
+        run: |
+          if scripts/setup/dns-${{ matrix.resource }}.sh --namespace server --count 0 --domain extdns.telescope.test 2>/dev/null; then
+            echo "ERROR: Expected non-zero exit for count=0"
+            exit 1
+          fi
+          echo "✓ Correctly failed on count=0"
 
   validate-structure:
     name: Validate Project Structure
