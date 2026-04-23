@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.11] - 2026-04-23
+
+### Added
+
+- DNS test scripts (`scripts/setup/dns-ingresses.sh`, `scripts/setup/dns-httproutes.sh`, `scripts/cleanup/dns-ingresses.sh`, `scripts/cleanup/dns-httproutes.sh`) that bulk-create or delete N `Ingress` / `HTTPRoute` resources with unique `test-{i}.{domain}` hostnames (all labeled `dns-test=true`) for external-DNS reconciliation testing in downstream telescope pipelines
+- CI `test-dns-resources` job with matrix over `[ingresses, httproutes]` covering positive (count=5) and negative paths (missing service, invalid domain, count=0)
+- Docker entrypoint coverage and README/CLAUDE.md documentation for the new DNS subcommands
+
 ## [0.0.10] - 2026-04-07
 
 ### Changed
