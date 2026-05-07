@@ -115,6 +115,8 @@ docker run <image> setup/ingress --ingress-class nginx --replica-count 3
 # Bulk-create dns-test Ingresses or HTTPRoutes (for external-DNS testing)
 docker run <image> setup/dns-ingresses --count 100 --domain extdns.telescope.test
 docker run <image> setup/dns-httproutes --count 100 --domain extdns.telescope.test
+# Append a second batch of 100 starting at index 101 (no hostname collisions)
+docker run <image> setup/dns-ingresses --count 100 --existing-n 100 --domain extdns.telescope.test
 docker run <image> cleanup/dns-ingresses
 docker run <image> cleanup/dns-httproutes
 
@@ -159,7 +161,7 @@ Note: all modules expect to be **run from the root directory of this project**.
 - `/install` — traffic controller install scripts (`nginx.sh`, `istio.sh`)
 - `/setup` — server deployment scripts with readiness checks (`ingress.sh`, `gateway.sh`)
 - `/scenarios` — load test scenario scripts. These assume the cluster, traffic controller, and server are already running. Their output is JSON so that consumers can decide on the final display format themselves.
-- `/setup/dns-ingresses.sh`, `/setup/dns-httproutes.sh` — bulk-create N `Ingress` or Gateway API `HTTPRoute` resources (each with a unique `test-{i}.{domain}` hostname, all labeled `dns-test=true`) for external-DNS reconciliation testing. Paired with `/cleanup/dns-ingresses.sh` and `/cleanup/dns-httproutes.sh`, which delete by label.
+- `/setup/dns-ingresses.sh`, `/setup/dns-httproutes.sh` — bulk-create N `Ingress` or Gateway API `HTTPRoute` resources (each with a unique `test-{i}.{domain}` hostname, all labeled `dns-test=true`) for external-DNS reconciliation testing. Use `--existing-n <N>` to offset the index range so additional batches can be appended without colliding with existing hostnames. The generated manifest is written to a unique `mktemp` file under `$TMPDIR` and applied with a single `kubectl apply --server-side -f`. Paired with `/cleanup/dns-ingresses.sh` and `/cleanup/dns-httproutes.sh`, which delete by label.
 
 ### /server
 
