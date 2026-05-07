@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.12] - 2026-05-07
+
+### Added
+
+- `--existing-n <N>` index offset flag in `scripts/setup/dns-ingresses.sh` and `scripts/setup/dns-httproutes.sh`, so additional batches can be appended without colliding with existing `test-{i}.{domain}` hostnames (objects are numbered `(existing-n+1)..(existing-n+count)`)
+
+### Changed
+
+- Setup DNS scripts now stream the generated multi-document YAML to a unique `mktemp -t dns-{ingresses,httproutes}.XXXXXX.yaml` file under `$TMPDIR` and apply it with a single `kubectl apply --server-side -f`, instead of building the manifest in memory and piping it into `kubectl`
+
 ## [0.0.11] - 2026-04-23
 
 ### Added
