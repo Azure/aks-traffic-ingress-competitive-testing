@@ -87,7 +87,7 @@ fi
 
 START=$((EXISTING_N + 1))
 END=$((EXISTING_N + COUNT))
-MANIFEST_FILE="$(pwd)/dns-httproutes.yaml"
+MANIFEST_FILE="$(mktemp -t dns-httproutes.XXXXXX.yaml)"
 
 echo "Creating $COUNT dns-test HTTPRoutes (indices ${START}..${END}):"
 echo "  Domain:        $DOMAIN"

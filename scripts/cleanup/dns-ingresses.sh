@@ -36,10 +36,4 @@ LABEL="dns-test=true"
 echo "Deleting dns-test ingresses in namespace $NAMESPACE..."
 kubectl delete ingress -n "$NAMESPACE" -l "$LABEL" --wait=false --ignore-not-found
 
-MANIFEST_FILE="$(pwd)/dns-ingresses.yaml"
-if [ -f "$MANIFEST_FILE" ]; then
-    echo "Removing local manifest file $MANIFEST_FILE..."
-    rm -f "$MANIFEST_FILE"
-fi
-
 echo "Delete request submitted (--wait=false)."

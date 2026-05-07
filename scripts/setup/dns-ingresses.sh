@@ -80,7 +80,7 @@ fi
 
 START=$((EXISTING_N + 1))
 END=$((EXISTING_N + COUNT))
-MANIFEST_FILE="$(pwd)/dns-ingresses.yaml"
+MANIFEST_FILE="$(mktemp -t dns-ingresses.XXXXXX.yaml)"
 
 echo "Creating $COUNT dns-test ingresses (indices ${START}..${END}):"
 echo "  Domain:        $DOMAIN"
