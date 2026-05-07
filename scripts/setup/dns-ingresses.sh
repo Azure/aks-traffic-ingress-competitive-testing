@@ -17,6 +17,7 @@ show_usage() {
     echo "Options:"
     echo "  --count <N>           (required) Number of ingresses to create"
     echo "  --domain <domain>     (required) DNS zone domain (e.g. extdns.telescope.test)"
+    echo "  --existing-n <N>      Index offset; objects will be numbered (existing-n+1)..(existing-n+count) (default: 0)"
     echo "  --namespace <ns>      Kubernetes namespace (default: default)"
     echo "  --ingress-class <cls> Ingress class (default: webapprouting.kubernetes.azure.com)"
     echo "  --service-name <name> Backend service name (default: server)"
@@ -27,6 +28,7 @@ show_usage() {
 
 COUNT=""
 DOMAIN=""
+EXISTING_N="0"
 NAMESPACE="default"
 INGRESS_CLASS="webapprouting.kubernetes.azure.com"
 SERVICE_NAME="server"
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --count)         COUNT="$2"; shift 2 ;;
         --domain)        DOMAIN="$2"; shift 2 ;;
+        --existing-n)    EXISTING_N="$2"; shift 2 ;;
         --namespace)     NAMESPACE="$2"; shift 2 ;;
         --ingress-class) INGRESS_CLASS="$2"; shift 2 ;;
         --service-name)  SERVICE_NAME="$2"; shift 2 ;;
@@ -58,6 +61,11 @@ if ! [[ "$COUNT" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
+if ! [[ "$EXISTING_N" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "Error: --existing-n must be a non-negative integer (>= 0)"
+    exit 1
+fi
+
 # RFC 1123 DNS subdomain: labels of [a-z0-9]([a-z0-9-]*[a-z0-9])?, separated by dots.
 DNS_LABEL='[a-z0-9]([-a-z0-9]*[a-z0-9])?'
 if ! [[ "$DOMAIN" =~ ^${DNS_LABEL}(\.${DNS_LABEL})*$ ]]; then
@@ -70,18 +78,23 @@ if ! kubectl get service "$SERVICE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Creating $COUNT dns-test ingresses:"
+START=$((EXISTING_N + 1))
+END=$((EXISTING_N + COUNT))
+MANIFEST_FILE="$(mktemp -t dns-ingresses.XXXXXX.yaml)"
+
+echo "Creating $COUNT dns-test ingresses (indices ${START}..${END}):"
 echo "  Domain:        $DOMAIN"
 echo "  Namespace:     $NAMESPACE"
 echo "  Ingress Class: $INGRESS_CLASS"
 echo "  Service:       $SERVICE_NAME:$SERVICE_PORT"
+echo "  Manifest file: $MANIFEST_FILE"
 
-MANIFEST=$(
-    for i in $(seq 1 "$COUNT"); do
-        if [ "$i" -gt 1 ]; then
-            printf '%s\n' '---'
-        fi
-        cat <<EOF
+: > "$MANIFEST_FILE"
+for i in $(seq "$START" "$END"); do
+    if [ "$i" -gt "$START" ]; then
+        printf '%s\n' '---' >> "$MANIFEST_FILE"
+    fi
+    cat <<EOF >> "$MANIFEST_FILE"
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -103,10 +116,9 @@ spec:
                 port:
                   number: ${SERVICE_PORT}
 EOF
-    done
-)
+done
 
-echo "Applying $COUNT ingresses in a single bulk request..."
-echo "$MANIFEST" | kubectl apply --server-side -f -
+echo "Applying $COUNT ingresses from $MANIFEST_FILE in a single bulk request..."
+kubectl apply --server-side -f "$MANIFEST_FILE"
 
-echo "Created $COUNT ingresses with hostnames test-1.${DOMAIN} through test-${COUNT}.${DOMAIN}"
+echo "Created $COUNT ingresses with hostnames test-${START}.${DOMAIN} through test-${END}.${DOMAIN}"

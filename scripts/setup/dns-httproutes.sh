@@ -17,6 +17,7 @@ show_usage() {
     echo "Options:"
     echo "  --count <N>                   (required) Number of HTTPRoutes to create"
     echo "  --domain <domain>             (required) DNS zone domain (e.g. extdns.telescope.test)"
+    echo "  --existing-n <N>              Index offset; objects will be numbered (existing-n+1)..(existing-n+count) (default: 0)"
     echo "  --namespace <ns>              Kubernetes namespace (default: default)"
     echo "  --gateway <name>              Parent Gateway name (default: server)"
     echo "  --gateway-section-name <sec>  Parent Gateway listener section name (default: http)"
@@ -28,6 +29,7 @@ show_usage() {
 
 COUNT=""
 DOMAIN=""
+EXISTING_N="0"
 NAMESPACE="default"
 GATEWAY="server"
 GATEWAY_SECTION_NAME="http"
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --count)                 COUNT="$2"; shift 2 ;;
         --domain)                DOMAIN="$2"; shift 2 ;;
+        --existing-n)            EXISTING_N="$2"; shift 2 ;;
         --namespace)             NAMESPACE="$2"; shift 2 ;;
         --gateway)               GATEWAY="$2"; shift 2 ;;
         --gateway-section-name)  GATEWAY_SECTION_NAME="$2"; shift 2 ;;
@@ -61,6 +64,11 @@ if ! [[ "$COUNT" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
+if ! [[ "$EXISTING_N" =~ ^(0|[1-9][0-9]*)$ ]]; then
+    echo "Error: --existing-n must be a non-negative integer (>= 0)"
+    exit 1
+fi
+
 DNS_LABEL='[a-z0-9]([-a-z0-9]*[a-z0-9])?'
 if ! [[ "$DOMAIN" =~ ^${DNS_LABEL}(\.${DNS_LABEL})*$ ]]; then
     echo "Error: --domain '$DOMAIN' is not a valid DNS subdomain (RFC 1123)"
@@ -77,18 +85,23 @@ if ! kubectl get service "$SERVICE_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Creating $COUNT dns-test HTTPRoutes:"
+START=$((EXISTING_N + 1))
+END=$((EXISTING_N + COUNT))
+MANIFEST_FILE="$(mktemp -t dns-httproutes.XXXXXX.yaml)"
+
+echo "Creating $COUNT dns-test HTTPRoutes (indices ${START}..${END}):"
 echo "  Domain:        $DOMAIN"
 echo "  Namespace:     $NAMESPACE"
 echo "  Gateway:       $GATEWAY (section: $GATEWAY_SECTION_NAME)"
 echo "  Service:       $SERVICE_NAME:$SERVICE_PORT"
+echo "  Manifest file: $MANIFEST_FILE"
 
-MANIFEST=$(
-    for i in $(seq 1 "$COUNT"); do
-        if [ "$i" -gt 1 ]; then
-            printf '%s\n' '---'
-        fi
-        cat <<EOF
+: > "$MANIFEST_FILE"
+for i in $(seq "$START" "$END"); do
+    if [ "$i" -gt "$START" ]; then
+        printf '%s\n' '---' >> "$MANIFEST_FILE"
+    fi
+    cat <<EOF >> "$MANIFEST_FILE"
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -111,10 +124,9 @@ spec:
         - name: ${SERVICE_NAME}
           port: ${SERVICE_PORT}
 EOF
-    done
-)
+done
 
-echo "Applying $COUNT HTTPRoutes in a single bulk request..."
-echo "$MANIFEST" | kubectl apply --server-side -f -
+echo "Applying $COUNT HTTPRoutes from $MANIFEST_FILE in a single bulk request..."
+kubectl apply --server-side -f "$MANIFEST_FILE"
 
-echo "Created $COUNT HTTPRoutes with hostnames test-1.${DOMAIN} through test-${COUNT}.${DOMAIN}"
+echo "Created $COUNT HTTPRoutes with hostnames test-${START}.${DOMAIN} through test-${END}.${DOMAIN}"
