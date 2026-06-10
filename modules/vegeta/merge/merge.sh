@@ -11,7 +11,7 @@
 set -eo pipefail
 
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
-aggregator="${filepath}/../aggregate.awk"
+aggregator="${filepath}/../lib/aggregate.awk"
 
 show_usage() {
     echo "Usage: $0 [--output-file FILE] <bin_file1> [bin_file2 ...]"

@@ -8,7 +8,7 @@ set -exo pipefail
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 statefile="${filepath}/../statefile.json"
 binfile="${filepath}/../statefile.bin"
-aggregator="${filepath}/../aggregate.awk"
+aggregator="${filepath}/../lib/aggregate.awk"
 
 show_usage() {
     echo "Usage: $0 [OPTIONS]"

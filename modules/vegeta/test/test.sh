@@ -704,7 +704,7 @@ fi
 
 # Live path: vegeta encode --to csv | gawk -f aggregate.awk (no sort)
 vegeta encode --to csv "${LATFILT_BIN}" | \
-    gawk -f "${MODULE_DIR}/aggregate.awk" > "${LATFILT_LIVE}"
+    gawk -f "${MODULE_DIR}/lib/aggregate.awk" > "${LATFILT_LIVE}"
 
 # Merge path: full merge.sh pipeline (sort | gawk)
 "${MODULE_DIR}/merge/merge.sh" --output-file "${LATFILT_MERGE}" "${LATFILT_BIN}"
