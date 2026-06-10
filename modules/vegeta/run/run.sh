@@ -8,6 +8,7 @@ set -exo pipefail
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 statefile="${filepath}/../statefile.json"
 binfile="${filepath}/../statefile.bin"
+aggregator="${filepath}/../aggregate.awk"
 
 show_usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -101,17 +102,15 @@ run_vegeta_attack() {
 
     # Run attack with streaming tee pipeline:
     # - tee saves raw binary results to .bin file (kept for downstream merge)
-    # - vegeta encode | jaggr processes results in real-time (correct per-second bucketing)
-    echo "Streaming vegeta attack to ${binfile} and jaggr..."
+    # - vegeta encode --to csv | gawk (shared aggregate.awk) produces per-second JSON
+    #   with the same schema as merge.sh (rps, successful_count, success_rate, code.hist,
+    #   latency, bytes_*). Latency percentiles exclude status_code=0 transport failures.
+    echo "Streaming vegeta attack to ${binfile} and ${statefile}..."
     echo "GET $target_url" | \
     "${attack_cmd[@]}" | \
     tee "$binfile" | \
-    vegeta encode | \
-    jaggr @count=rps \
-      hist\[100,200,300,400,500\]:code \
-      p25,p50,p99:latency \
-      sum:bytes_in \
-      sum:bytes_out | \
+    vegeta encode --to csv | \
+    gawk -f "$aggregator" | \
     tee "$statefile"
 
     # Verify the .bin file is non-empty
@@ -122,7 +121,7 @@ run_vegeta_attack() {
 
     # Verify the statefile is non-empty
     if [[ ! -s "$statefile" ]]; then
-        echo "ERROR: jaggr produced no output (${statefile} is empty)"
+        echo "ERROR: aggregator produced no output (${statefile} is empty)"
         return 1
     fi
 
