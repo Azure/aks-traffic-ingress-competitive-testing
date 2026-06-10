@@ -30,7 +30,7 @@ cleanup() {
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
     rm -f "${MODULE_DIR}/statefile.bin" || true
-    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* || true
+    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* /tmp/vegeta-test-latfilt-*.json || true
 }
 
 # Set trap to cleanup on exit
@@ -636,6 +636,174 @@ if [[ "${SYNTH_BYTES_IN}" -ne 1300 ]]; then
 fi
 
 echo "✓ Multi-pod merge latency percentile logic test passed"
+
+echo "17. Testing latency excludes status_code=0 (transport-failure) records..."
+# Synthetic CSV with a mix of code-200 successes and code-0 transport failures.
+# Vegeta uses status_code=0 for connection refused, EOF, timeout, etc. The
+# aggregator must exclude these from latency percentiles (since their "latency"
+# is failure-detection time, not service response time) while still counting
+# them in rps and code.hist.
+#
+# Bucket structure (3 second-buckets):
+#   bucket 0 (second 0): 5 successes (latencies 10..50ms) + 5 failures (30s timeouts)
+#                        → rps=10, successful_count=5, success_rate=0.5
+#                        → latency.p99 must reflect only the 200s (≤50ms),
+#                          NOT the 30s timeout
+#   bucket 1 (second 1): 10 successes only
+#                        → rps=10, successful_count=10, success_rate=1.0
+#   bucket 2 (second 2): 10 failures only
+#                        → rps=10, successful_count=0, success_rate=0.0
+#                        → latency must be {0,0,0} without crashing
+#
+# Both the live path (gawk -f aggregate.awk on unsorted CSV) and the merge path
+# (sort | gawk) must produce identical output for this in-order input.
+
+LATFILT_CSV="/tmp/vegeta-test-latfilt.csv"
+LATFILT_BIN="/tmp/vegeta-test-latfilt.bin"
+LATFILT_LIVE="/tmp/vegeta-test-latfilt-live.json"
+LATFILT_MERGE="/tmp/vegeta-test-latfilt-merge.json"
+rm -f "${LATFILT_CSV}" "${LATFILT_BIN}" "${LATFILT_LIVE}" "${LATFILT_MERGE}"
+
+BASE_TS=1700000000000000000
+TIMEOUT_NS=30000000000  # 30s — the kind of latency a code-0 timeout would carry
+SEQ=0
+
+# Bucket 0: 5 × 200 (latencies 10ms, 20ms, 30ms, 40ms, 50ms) + 5 × code-0 (30s)
+for i in 1 2 3 4 5; do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + i * 1000000))
+    LAT=$((i * 10000000))  # 10ms, 20ms, 30ms, 40ms, 50ms
+    echo "${TS},200,${LAT},0,13,,,,${SEQ},GET,http://localhost/,"
+done > "${LATFILT_CSV}"
+for i in 1 2 3 4 5; do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + (i + 5) * 1000000))
+    echo "${TS},0,${TIMEOUT_NS},0,0,connection refused,,,${SEQ},GET,http://localhost/,"
+done >> "${LATFILT_CSV}"
+
+# Bucket 1: 10 × 200 (latencies 5ms each)
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 1000000000 + i * 1000000))
+    echo "${TS},200,5000000,0,13,,,,${SEQ},GET,http://localhost/,"
+done >> "${LATFILT_CSV}"
+
+# Bucket 2: 10 × code-0 (30s timeouts)
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 2000000000 + i * 1000000))
+    echo "${TS},0,${TIMEOUT_NS},0,0,connection refused,,,${SEQ},GET,http://localhost/,"
+done >> "${LATFILT_CSV}"
+
+# Convert to vegeta binary
+vegeta encode --to gob < "${LATFILT_CSV}" > "${LATFILT_BIN}"
+if [[ ! -s "${LATFILT_BIN}" ]]; then
+    echo "ERROR: Failed to create synthetic .bin file for latency-filter test"
+    exit 1
+fi
+
+# Live path: vegeta encode --to csv | gawk -f aggregate.awk (no sort)
+vegeta encode --to csv "${LATFILT_BIN}" | \
+    gawk -f "${MODULE_DIR}/aggregate.awk" > "${LATFILT_LIVE}"
+
+# Merge path: full merge.sh pipeline (sort | gawk)
+"${MODULE_DIR}/merge/merge.sh" --output-file "${LATFILT_MERGE}" "${LATFILT_BIN}"
+
+# Both paths must produce identical output for in-order input
+if ! diff -q "${LATFILT_LIVE}" "${LATFILT_MERGE}" > /dev/null; then
+    echo "ERROR: Live and merge paths produced different output"
+    echo "--- live ---"
+    cat "${LATFILT_LIVE}"
+    echo "--- merge ---"
+    cat "${LATFILT_MERGE}"
+    exit 1
+fi
+echo "  ✓ live and merge paths produce identical output"
+
+LATFILT_LINES=$(wc -l < "${LATFILT_MERGE}")
+if [[ "${LATFILT_LINES}" -ne 3 ]]; then
+    echo "ERROR: Expected 3 buckets, got ${LATFILT_LINES}"
+    cat "${LATFILT_MERGE}"
+    exit 1
+fi
+
+# --- Bucket 0: mixed (5 × 200 + 5 × code-0) ---
+B0=$(sed -n '1p' "${LATFILT_MERGE}")
+B0_RPS=$(echo "$B0" | jq -r '.rps')
+B0_SUCC=$(echo "$B0" | jq -r '.successful_count')
+B0_RATE=$(echo "$B0" | jq -r '.success_rate')
+B0_200=$(echo "$B0" | jq -r '.code.hist["200"] // 0')
+B0_0=$(echo "$B0" | jq -r '.code.hist["0"] // 0')
+B0_P25=$(echo "$B0" | jq -r '.latency.p25')
+B0_P50=$(echo "$B0" | jq -r '.latency.p50')
+B0_P99=$(echo "$B0" | jq -r '.latency.p99')
+
+[[ "${B0_RPS}" -eq 10 ]] || { echo "ERROR bucket0: rps expected 10, got ${B0_RPS} | ${B0}"; exit 1; }
+[[ "${B0_SUCC}" -eq 5 ]] || { echo "ERROR bucket0: successful_count expected 5, got ${B0_SUCC} | ${B0}"; exit 1; }
+[[ "${B0_RATE}" == "0.5000" ]] || { echo "ERROR bucket0: success_rate expected 0.5000, got ${B0_RATE} | ${B0}"; exit 1; }
+[[ "${B0_200}" -eq 5 ]] || { echo "ERROR bucket0: code.hist[200] expected 5, got ${B0_200} | ${B0}"; exit 1; }
+[[ "${B0_0}" -eq 5 ]] || { echo "ERROR bucket0: code.hist[0] expected 5, got ${B0_0} | ${B0}"; exit 1; }
+# Critical: percentiles must be ≤50ms (the worst 200), NOT the 30s timeout
+if [[ "${B0_P99}" -gt 50000000 ]]; then
+    echo "ERROR bucket0: latency.p99=${B0_P99} > 50ms — code-0 records leaked into percentiles"
+    echo "$B0"
+    exit 1
+fi
+# Sanity: percentiles should be drawn from the 5 successful latencies {10,20,30,40,50}ms
+# n=5, p25_idx=floor(5*0.25)=1 → 10ms, p50_idx=2 → 20ms, p99_idx=4 → 40ms
+[[ "${B0_P25}" -eq 10000000 ]] || { echo "ERROR bucket0: p25 expected 10000000, got ${B0_P25}"; exit 1; }
+[[ "${B0_P50}" -eq 20000000 ]] || { echo "ERROR bucket0: p50 expected 20000000, got ${B0_P50}"; exit 1; }
+[[ "${B0_P99}" -eq 40000000 ]] || { echo "ERROR bucket0: p99 expected 40000000, got ${B0_P99}"; exit 1; }
+echo "  ✓ bucket 0 (mixed): rps=10, succ=5, rate=0.5, p99=${B0_P99}ns excludes 30s code-0 timeouts"
+
+# --- Bucket 1: all successes ---
+B1=$(sed -n '2p' "${LATFILT_MERGE}")
+B1_RPS=$(echo "$B1" | jq -r '.rps')
+B1_SUCC=$(echo "$B1" | jq -r '.successful_count')
+B1_RATE=$(echo "$B1" | jq -r '.success_rate')
+B1_P50=$(echo "$B1" | jq -r '.latency.p50')
+
+[[ "${B1_RPS}" -eq 10 ]] || { echo "ERROR bucket1: rps expected 10, got ${B1_RPS}"; exit 1; }
+[[ "${B1_SUCC}" -eq 10 ]] || { echo "ERROR bucket1: successful_count expected 10, got ${B1_SUCC}"; exit 1; }
+[[ "${B1_RATE}" == "1.0000" ]] || { echo "ERROR bucket1: success_rate expected 1.0000, got ${B1_RATE}"; exit 1; }
+[[ "${B1_P50}" -eq 5000000 ]] || { echo "ERROR bucket1: p50 expected 5000000ns, got ${B1_P50}"; exit 1; }
+echo "  ✓ bucket 1 (all success): rps=10, succ=10, rate=1.0, p50=5ms"
+
+# --- Bucket 2: all failures ---
+B2=$(sed -n '3p' "${LATFILT_MERGE}")
+B2_RPS=$(echo "$B2" | jq -r '.rps')
+B2_SUCC=$(echo "$B2" | jq -r '.successful_count')
+B2_RATE=$(echo "$B2" | jq -r '.success_rate')
+B2_0=$(echo "$B2" | jq -r '.code.hist["0"] // 0')
+B2_P25=$(echo "$B2" | jq -r '.latency.p25')
+B2_P50=$(echo "$B2" | jq -r '.latency.p50')
+B2_P99=$(echo "$B2" | jq -r '.latency.p99')
+
+[[ "${B2_RPS}" -eq 10 ]] || { echo "ERROR bucket2: rps expected 10, got ${B2_RPS}"; exit 1; }
+[[ "${B2_SUCC}" -eq 0 ]] || { echo "ERROR bucket2: successful_count expected 0, got ${B2_SUCC}"; exit 1; }
+[[ "${B2_RATE}" == "0.0000" ]] || { echo "ERROR bucket2: success_rate expected 0.0000, got ${B2_RATE}"; exit 1; }
+[[ "${B2_0}" -eq 10 ]] || { echo "ERROR bucket2: code.hist[0] expected 10, got ${B2_0}"; exit 1; }
+# All-failure edge case: latency must be {0,0,0}, JSON shape preserved, no crash
+[[ "${B2_P25}" -eq 0 ]] || { echo "ERROR bucket2: p25 expected 0, got ${B2_P25}"; exit 1; }
+[[ "${B2_P50}" -eq 0 ]] || { echo "ERROR bucket2: p50 expected 0, got ${B2_P50}"; exit 1; }
+[[ "${B2_P99}" -eq 0 ]] || { echo "ERROR bucket2: p99 expected 0, got ${B2_P99}"; exit 1; }
+echo "  ✓ bucket 2 (all failures): rps=10, succ=0, rate=0.0, latency=0/0/0 (no crash)"
+
+# Schema invariants across all lines
+while IFS= read -r line; do
+    echo "$line" | jq -e '
+        (has("rps") and has("successful_count") and has("success_rate")
+         and has("code") and has("latency") and has("bytes_in") and has("bytes_out"))
+        and (.code | has("hist"))
+        and (.latency | has("p25") and has("p50") and has("p99"))
+        and (([.code.hist[]] | add) == .rps)
+        and (.success_rate >= 0 and .success_rate <= 1)
+        and (.successful_count <= .rps)
+    ' > /dev/null || { echo "ERROR: schema invariant failed on line: ${line}"; exit 1; }
+done < "${LATFILT_MERGE}"
+echo "  ✓ schema invariants hold (sum(code.hist) == rps, success_rate ∈ [0,1], successful_count ≤ rps)"
+
+echo "✓ Latency-filter and success_rate test passed"
 
 echo ""
 echo "All Vegeta module tests passed!"
