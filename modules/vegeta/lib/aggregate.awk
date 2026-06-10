@@ -22,9 +22,12 @@
 #
 # success_rate is successful_count / rps as a float in [0,1], formatted to 4 decimals.
 #
-# Bucketing assumes records arrive roughly in timestamp order. The merge path sorts
-# explicitly; the live path relies on `vegeta encode` emitting records in attack order
-# (verified to be timestamp-sorted for steady-rate attacks).
+# Bucketing assumes records arrive roughly in timestamp order. The merge path
+# sorts explicitly; the live path relies on `vegeta encode` emitting records in
+# attack order (verified to be timestamp-sorted for steady-rate attacks). When
+# a late record arrives (this_second < current_second), it is absorbed into the
+# current bucket rather than triggering a new bucket flush — preventing the
+# same wall-second from appearing on two output lines under high-variance load.
 
 function floor_val(x) {
     return int(x)
@@ -81,7 +84,7 @@ BEGIN {
         current_second = this_second
     }
 
-    if (this_second != current_second) {
+    if (this_second > current_second) {
         flush_bucket()
         current_second = this_second
         bucket_count = 0
@@ -91,6 +94,9 @@ BEGIN {
         delete code_counts
         delete latencies
     }
+    # Late record (this_second < current_second): absorb into the current
+    # bucket rather than flushing and starting a new one. Splitting a second
+    # into two output lines is worse than slight count drift across buckets.
 
     bucket_count++
     if (status_code != "0") {
