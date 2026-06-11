@@ -70,7 +70,7 @@ echo "1. Testing Vegeta installation..."
 chmod +x "${MODULE_DIR}/install/install.sh"
 
 # Always run the install script to test the installation process
-echo "Running Vegeta and jaggr installation..."
+echo "Running Vegeta installation..."
 "${MODULE_DIR}/install/install.sh"
 
 # Verify Vegeta is installed
@@ -79,20 +79,11 @@ if ! command -v vegeta &> /dev/null; then
     exit 1
 fi
 
-# Verify jaggr is installed
-if ! command -v jaggr &> /dev/null; then
-    echo "ERROR: jaggr installation failed - jaggr command not found"
-    exit 1
-fi
-
 echo "✓ Vegeta installation test passed"
 
 echo "2. Testing Vegeta version..."
 VEGETA_VERSION=$(vegeta --version)
 echo "Vegeta version: ${VEGETA_VERSION}"
-
-JAGGR_VERSION=$(jaggr --version 2>&1 || echo "jaggr version unknown")
-echo "jaggr version: ${JAGGR_VERSION}"
 
 echo "✓ Version check test passed"
 
@@ -126,9 +117,9 @@ if [[ ! -s "${STATEFILE}" ]]; then
     exit 1
 fi
 
-# Check if state file contains jaggr output format
+# Check the state file contains the expected aggregator output format
 if ! grep -q "rps" "${STATEFILE}"; then
-    echo "ERROR: State file may not contain expected jaggr output format"
+    echo "ERROR: State file may not contain expected aggregator output format"
     echo "State file content:"
     cat "${STATEFILE}"
     exit 1

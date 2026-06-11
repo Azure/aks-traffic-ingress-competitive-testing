@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Script to merge multiple vegeta raw .bin files into jaggr-format per-second JSON output.
+# Script to merge multiple vegeta raw .bin files into per-second JSON output
+# matching the live runner's aggregate.awk schema.
 # Uses actual request timestamps for bucketing (not wall-clock time), so it works correctly
 # on saved/replayed data and correctly interleaves results from pods that started at
 # slightly different times.
@@ -16,7 +17,7 @@ aggregator="${filepath}/../lib/aggregate.awk"
 show_usage() {
     echo "Usage: $0 [--output-file FILE] <bin_file1> [bin_file2 ...]"
     echo ""
-    echo "Merges one or more raw vegeta .bin files into jaggr-format per-second JSON output."
+    echo "Merges one or more raw vegeta .bin files into per-second JSON output."
     echo ""
     echo "Options:"
     echo "  --output-file FILE   Write output to FILE (default: stdout)"
