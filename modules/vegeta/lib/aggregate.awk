@@ -28,10 +28,9 @@
 #     came back, how many were 2xx (server accepted and fulfilled the request).
 #     1xx interim, 3xx redirects, 4xx client errors, and 5xx server errors are
 #     NOT counted as successful. success_rate = successful_count / responded_count,
-#     or 0 when responded_count is 0 (no responses at all). Consumers should
-#     check responded_count > 0 before treating success_rate as meaningful —
-#     when responded_count is 0 the field is literally "0/0", not "0% of
-#     responses succeeded".
+#     or JSON null when responded_count is 0 (the ratio is undefined — there's
+#     no responses to compute it over). Consumers should treat null as "no
+#     data this second" rather than "0% succeeded".
 #
 # code.hist preserves the exact status codes seen this second (e.g. "200":5,"503":2).
 # code.family aggregates the same counts into hundreds families (0, 100, 200, 300,
@@ -92,14 +91,18 @@ function flush_bucket() {
     }
 
     response_rate = responded_count / bucket_count
+    # success_rate is undefined when no responses came back (0/0). Emit JSON
+    # null in that case so consumers don't confuse it with "0% of responses
+    # succeeded". When at least one response came back, emit the formatted
+    # ratio.
     if (responded_count > 0) {
-        success_rate = successful_count / responded_count
+        success_rate_field = sprintf("%.4f", successful_count / responded_count)
     } else {
-        success_rate = 0
+        success_rate_field = "null"
     }
 
-    printf "{\"rps\":%d,\"responded_count\":%d,\"response_rate\":%.4f,\"successful_count\":%d,\"success_rate\":%.4f,\"code\":{\"hist\":{%s},\"family\":{%s}},\"latency\":{\"p25\":%d,\"p50\":%d,\"p99\":%d},\"bytes_in\":{\"sum\":%d},\"bytes_out\":{\"sum\":%d}}\n", \
-        bucket_count, responded_count, response_rate, successful_count, success_rate, code_hist, code_family, p25_val, p50_val, p99_val, bytes_in_sum, bytes_out_sum
+    printf "{\"rps\":%d,\"responded_count\":%d,\"response_rate\":%.4f,\"successful_count\":%d,\"success_rate\":%s,\"code\":{\"hist\":{%s},\"family\":{%s}},\"latency\":{\"p25\":%d,\"p50\":%d,\"p99\":%d},\"bytes_in\":{\"sum\":%d},\"bytes_out\":{\"sum\":%d}}\n", \
+        bucket_count, responded_count, response_rate, successful_count, success_rate_field, code_hist, code_family, p25_val, p50_val, p99_val, bytes_in_sum, bytes_out_sum
     fflush()
 }
 

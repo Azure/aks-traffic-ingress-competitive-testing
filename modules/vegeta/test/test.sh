@@ -799,8 +799,8 @@ B2_P99=$(echo "$B2" | jq -r '.latency.p99')
 [[ "${B2_RESP}" -eq 0 ]] || { echo "ERROR bucket2: responded_count expected 0, got ${B2_RESP}"; exit 1; }
 [[ "${B2_SUCC}" -eq 0 ]] || { echo "ERROR bucket2: successful_count expected 0, got ${B2_SUCC}"; exit 1; }
 echo "$B2" | jq -e '.response_rate == 0' > /dev/null || { echo "ERROR bucket2: response_rate expected 0 | ${B2}"; exit 1; }
-# success_rate is 0 when responded_count is 0 (no responses to compute over)
-echo "$B2" | jq -e '.success_rate == 0' > /dev/null || { echo "ERROR bucket2: success_rate expected 0 | ${B2}"; exit 1; }
+# success_rate is JSON null when responded_count is 0 (ratio is undefined).
+echo "$B2" | jq -e '.success_rate == null' > /dev/null || { echo "ERROR bucket2: success_rate expected null | ${B2}"; exit 1; }
 [[ "${B2_0}" -eq 10 ]] || { echo "ERROR bucket2: code.hist[0] expected 10, got ${B2_0}"; exit 1; }
 # All-failure edge case: latency must be {0,0,0}, JSON shape preserved, no crash
 [[ "${B2_P25}" -eq 0 ]] || { echo "ERROR bucket2: p25 expected 0, got ${B2_P25}"; exit 1; }
@@ -812,6 +812,7 @@ echo "  ✓ bucket 2 (all transport failures): rps=10, resp=0, succ=0, rate=0/0,
 # - all six hundreds keys (0/100/200/300/400/500) always present
 # - sum(code.hist) == sum(code.family) == rps (both views describe the same records)
 # - successful_count ≤ responded_count ≤ rps (subset chain)
+# - success_rate is null exactly when responded_count is 0; otherwise a [0,1] float
 while IFS= read -r line; do
     echo "$line" | jq -e '
         (has("rps") and has("responded_count") and has("response_rate")
@@ -823,12 +824,15 @@ while IFS= read -r line; do
         and (([.code.hist[]] | add) == .rps)
         and (([.code.family[]] | add) == .rps)
         and (.response_rate >= 0 and .response_rate <= 1)
-        and (.success_rate >= 0 and .success_rate <= 1)
+        and (
+          (.responded_count == 0 and .success_rate == null)
+          or (.responded_count > 0 and .success_rate >= 0 and .success_rate <= 1)
+        )
         and (.successful_count <= .responded_count)
         and (.responded_count <= .rps)
     ' > /dev/null || { echo "ERROR: schema invariant failed on line: ${line}"; exit 1; }
 done < "${LATFILT_MERGE}"
-echo "  ✓ schema invariants hold (successful_count ≤ responded_count ≤ rps, sums match, all family keys present)"
+echo "  ✓ schema invariants hold (successful_count ≤ responded_count ≤ rps, sums match, success_rate null iff responded_count=0)"
 
 # Bucket-by-bucket family assertions: 200s land in family["200"], code-0s in family["0"],
 # unused families stay at 0.
