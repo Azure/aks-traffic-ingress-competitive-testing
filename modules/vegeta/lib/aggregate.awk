@@ -8,17 +8,22 @@
 #
 # Output: one JSON line per second-bucket, with shape:
 #   {"rps":N,"successful_count":M,"success_rate":R,
-#    "code":{"hist":{...}},
+#    "code":{"hist":{...exact codes...},"family":{"0":A,"100":B,"200":C,"300":D,"400":E,"500":F}},
 #    "latency":{"p25":x,"p50":y,"p99":z},
 #    "bytes_in":{"sum":...},"bytes_out":{"sum":...}}
+#
+# code.hist preserves the exact status codes seen this second (e.g. "200":5,"503":2).
+# code.family aggregates the same counts into hundreds families (0, 100, 200, 300,
+# 400, 500) and always emits all six keys — the stable schema downstream plotters
+# (jplot etc.) need so series don't disappear when a controller's exact codes vary.
+# Both views describe the same records: sum(code.hist[*]) == sum(code.family[*]) == rps.
 #
 # Latency percentiles are computed over successful requests only (status_code != "0").
 # Vegeta uses status_code=0 for transport-level failures (connection refused, EOF,
 # timeout) — including those would skew percentiles toward the failure-detection time
 # (often the full --timeout) when error rate is non-trivial.
 #
-# rps, code.hist, bytes_in.sum, bytes_out.sum count every record so that
-# sum(code.hist[*]) == rps remains an invariant.
+# rps, code.hist, code.family, bytes_in.sum, bytes_out.sum count every record.
 #
 # success_rate is successful_count / rps as a float in [0,1], formatted to 4 decimals.
 #
@@ -55,10 +60,25 @@ function flush_bucket() {
         code_hist = code_hist "\"" code "\":" code_counts[code]
     }
 
+    # Aggregate exact codes into hundreds families. Always emit all 6 keys
+    # (0, 100, 200, 300, 400, 500) so downstream plotters see a stable schema
+    # regardless of which exact codes appeared this second.
+    delete family_counts
+    for (code in code_counts) {
+        fam = int(code / 100) * 100
+        family_counts[fam] += code_counts[code]
+    }
+    code_family = ""
+    for (fam = 0; fam <= 500; fam += 100) {
+        if (code_family != "") code_family = code_family ","
+        cnt = (fam in family_counts) ? family_counts[fam] : 0
+        code_family = code_family "\"" fam "\":" cnt
+    }
+
     success_rate = successful_count / bucket_count
 
-    printf "{\"rps\":%d,\"successful_count\":%d,\"success_rate\":%.4f,\"code\":{\"hist\":{%s}},\"latency\":{\"p25\":%d,\"p50\":%d,\"p99\":%d},\"bytes_in\":{\"sum\":%d},\"bytes_out\":{\"sum\":%d}}\n", \
-        bucket_count, successful_count, success_rate, code_hist, p25_val, p50_val, p99_val, bytes_in_sum, bytes_out_sum
+    printf "{\"rps\":%d,\"successful_count\":%d,\"success_rate\":%.4f,\"code\":{\"hist\":{%s},\"family\":{%s}},\"latency\":{\"p25\":%d,\"p50\":%d,\"p99\":%d},\"bytes_in\":{\"sum\":%d},\"bytes_out\":{\"sum\":%d}}\n", \
+        bucket_count, successful_count, success_rate, code_hist, code_family, p25_val, p50_val, p99_val, bytes_in_sum, bytes_out_sum
     fflush()
 }
 

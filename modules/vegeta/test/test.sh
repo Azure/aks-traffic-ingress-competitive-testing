@@ -796,19 +796,33 @@ echo "$B2" | jq -e '.success_rate == 0' > /dev/null || { echo "ERROR bucket2: su
 [[ "${B2_P99}" -eq 0 ]] || { echo "ERROR bucket2: p99 expected 0, got ${B2_P99}"; exit 1; }
 echo "  ✓ bucket 2 (all failures): rps=10, succ=0, rate=0.0, latency=0/0/0 (no crash)"
 
-# Schema invariants across all lines
+# Schema invariants across all lines, plus code.family expectations:
+# - all six hundreds keys (0/100/200/300/400/500) always present
+# - sum(code.hist) == sum(code.family) == rps (both views describe the same records)
 while IFS= read -r line; do
     echo "$line" | jq -e '
         (has("rps") and has("successful_count") and has("success_rate")
          and has("code") and has("latency") and has("bytes_in") and has("bytes_out"))
-        and (.code | has("hist"))
+        and (.code | has("hist") and has("family"))
+        and (.code.family | has("0") and has("100") and has("200") and has("300") and has("400") and has("500"))
         and (.latency | has("p25") and has("p50") and has("p99"))
         and (([.code.hist[]] | add) == .rps)
+        and (([.code.family[]] | add) == .rps)
         and (.success_rate >= 0 and .success_rate <= 1)
         and (.successful_count <= .rps)
     ' > /dev/null || { echo "ERROR: schema invariant failed on line: ${line}"; exit 1; }
 done < "${LATFILT_MERGE}"
-echo "  ✓ schema invariants hold (sum(code.hist) == rps, success_rate ∈ [0,1], successful_count ≤ rps)"
+echo "  ✓ schema invariants hold (sum(code.hist) == sum(code.family) == rps, all 6 family keys present)"
+
+# Bucket-by-bucket family assertions: 200s land in family["200"], code-0s in family["0"],
+# unused families stay at 0.
+echo "$B0" | jq -e '.code.family == {"0":5,"100":0,"200":5,"300":0,"400":0,"500":0}' > /dev/null \
+    || { echo "ERROR bucket0: code.family mismatch | ${B0}"; exit 1; }
+echo "$B1" | jq -e '.code.family == {"0":0,"100":0,"200":10,"300":0,"400":0,"500":0}' > /dev/null \
+    || { echo "ERROR bucket1: code.family mismatch | ${B1}"; exit 1; }
+echo "$B2" | jq -e '.code.family == {"0":10,"100":0,"200":0,"300":0,"400":0,"500":0}' > /dev/null \
+    || { echo "ERROR bucket2: code.family mismatch | ${B2}"; exit 1; }
+echo "  ✓ code.family bins exact codes into hundreds families with stable key set"
 
 echo "✓ Latency-filter and success_rate test passed"
 
