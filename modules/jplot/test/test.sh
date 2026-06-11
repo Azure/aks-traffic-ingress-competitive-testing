@@ -34,7 +34,7 @@ fi
 
 SAMPLE_CSV=$(mktemp -t jplot-test.XXXXXX.csv)
 SAMPLE_JSON=$(mktemp -t jplot-test.XXXXXX.json)
-trap 'rm -f "${SAMPLE_CSV}" "${SAMPLE_JSON}"' RETURN
+trap 'rm -f "${SAMPLE_CSV}" "${SAMPLE_JSON}"' EXIT
 
 # One record per hundreds family in the same second-bucket so every family
 # bin (0/100/200/300/400/500) has a non-zero count. This exercises every
