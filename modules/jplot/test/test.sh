@@ -71,12 +71,17 @@ echo "  ✓ sample populates every family bin (0/100/200/300/400/500) with count
 
 # Capture jplot's argument list by overriding it in a child bash invocation.
 # `source` with positional args dispatches run.sh's vegeta function, which
-# calls our stub `jplot` instead of the real binary.
-JPLOT_ARGS=$(bash <<EOF
-jplot() { printf '%s\n' "\$@"; }
+# calls our stub `jplot`. Each captured arg is prefixed with __JPLOT_ARG__\t
+# so we can grep it out unambiguously — the run script's stdout (e.g. the
+# "Plotting vegeta results..." echo, anything future contributors add)
+# never accidentally collides with a panel.
+JPLOT_MARKER=$'__JPLOT_ARG__\t'
+JPLOT_OUTPUT=$(bash <<EOF
+jplot() { for arg in "\$@"; do printf '__JPLOT_ARG__\t%s\n' "\$arg"; done; }
 source "${MODULE_DIR}/run/run.sh" vegeta
 EOF
 )
+JPLOT_ARGS=$(printf '%s\n' "${JPLOT_OUTPUT}" | sed -n "s/^${JPLOT_MARKER}//p")
 
 # Translate dotted paths (rps, code.family.0, latency.p99) into jq selectors.
 # Numeric path segments need bracket notation: code.family.0 → .code.family["0"].
@@ -103,7 +108,6 @@ PANEL_COUNT=0
 PATH_COUNT=0
 while IFS= read -r panel; do
     [[ -z "$panel" ]] && continue
-    [[ "$panel" == "Plotting vegeta results..." ]] && continue
     PANEL_COUNT=$((PANEL_COUNT + 1))
     IFS='+' read -ra FIELDS <<< "$panel"
     for field in "${FIELDS[@]}"; do
@@ -117,8 +121,8 @@ done <<< "${JPLOT_ARGS}"
 
 if [[ "${PANEL_COUNT}" -eq 0 ]]; then
     echo "ERROR: failed to extract any jplot panels from ${MODULE_DIR}/run/run.sh"
-    echo "Captured output was:"
-    echo "${JPLOT_ARGS}"
+    echo "Raw captured output was:"
+    echo "${JPLOT_OUTPUT}"
     exit 1
 fi
 
