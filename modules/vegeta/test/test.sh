@@ -703,6 +703,15 @@ if [[ ! -s "${LATFILT_BIN}" ]]; then
     exit 1
 fi
 
+# Round-trip check: decoding the .bin back to CSV must yield the same row count
+# as the input CSV. Catches silent gob-encoding loss before downstream assertions.
+LATFILT_CSV_LINES=$(wc -l < "${LATFILT_CSV}")
+LATFILT_BIN_LINES=$(vegeta encode --to csv "${LATFILT_BIN}" | wc -l)
+if [[ "${LATFILT_CSV_LINES}" -ne "${LATFILT_BIN_LINES}" ]]; then
+    echo "ERROR: gob round-trip changed row count: input csv=${LATFILT_CSV_LINES}, decoded bin=${LATFILT_BIN_LINES}"
+    exit 1
+fi
+
 # Live path: vegeta encode --to csv | gawk -f aggregate.awk (no sort)
 vegeta encode --to csv "${LATFILT_BIN}" | \
     gawk -f "${MODULE_DIR}/lib/aggregate.awk" > "${LATFILT_LIVE}"
