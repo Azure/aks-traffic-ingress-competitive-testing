@@ -6,7 +6,7 @@ echo "Testing JPlot module..."
 
 echo "1. Testing JPlot installation..."
 MODULE_DIR=$( cd "$(dirname "${BASH_SOURCE[0]}")/.." ; pwd -P )
-PROJECT_ROOT=$( cd "${MODULE_DIR}/.." ; pwd -P )
+PROJECT_ROOT=$( cd "${MODULE_DIR}/../.." ; pwd -P )
 chmod +x "${MODULE_DIR}/install/install.sh"
 echo "Running JPlot installation..."
 "${MODULE_DIR}/install/install.sh"
