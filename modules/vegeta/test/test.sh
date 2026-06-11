@@ -288,16 +288,26 @@ if [[ "${LINE_COUNT}" -lt 8 ]]; then
     exit 1
 fi
 
-# Check that each line's rps value is reasonable (roughly near 50, not collapsed or empty)
+# Check that each line's rps value is reasonable (roughly near 50, not collapsed or empty).
+# Skip the first and last lines since they may be partial edge buckets — the attack rarely
+# starts or stops exactly on a second boundary, so those buckets can legitimately be
+# significantly below 50 RPS without indicating a bucketing bug. Mirrors test #14.
+TOTAL_LINES=$(wc -l < "${STATEFILE}")
+LINE_NUM=0
 MIN_REASONABLE_RPS=38   # 0.75x the target rate
 MAX_REASONABLE_RPS=63   # 1.25x the target rate
 while IFS= read -r line; do
+    LINE_NUM=$((LINE_NUM + 1))
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
         echo "This suggests results were collapsed instead of bucketed per-second"
         echo "Line: ${line}"
         exit 1
+    fi
+    # Skip RPS lower-bound check on first and last lines (partial edge buckets)
+    if [[ "${LINE_NUM}" -eq 1 ]] || [[ "${LINE_NUM}" -eq "${TOTAL_LINES}" ]]; then
+        continue
     fi
     if [[ "${RPS_VAL}" -lt "${MIN_REASONABLE_RPS}" ]]; then
         echo "ERROR: RPS value ${RPS_VAL} is unreasonably low (expected near 50, min ${MIN_REASONABLE_RPS})"
