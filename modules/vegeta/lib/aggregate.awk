@@ -28,7 +28,10 @@
 #     came back, how many were 2xx (server accepted and fulfilled the request).
 #     1xx interim, 3xx redirects, 4xx client errors, and 5xx server errors are
 #     NOT counted as successful. success_rate = successful_count / responded_count,
-#     or 0 when responded_count is 0 (no responses at all).
+#     or 0 when responded_count is 0 (no responses at all). Consumers should
+#     check responded_count > 0 before treating success_rate as meaningful —
+#     when responded_count is 0 the field is literally "0/0", not "0% of
+#     responses succeeded".
 #
 # code.hist preserves the exact status codes seen this second (e.g. "200":5,"503":2).
 # code.family aggregates the same counts into hundreds families (0, 100, 200, 300,
