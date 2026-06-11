@@ -97,9 +97,9 @@ to_jq_path() {
                 out = out $i
             }
         }
-        if (substr(out, 1, 1) != "[") out = "." out
-        else out = "" out  # rare: leading numeric segment, leave bracket form
-        print out
+        # All current jplot paths start with a non-numeric segment, so the
+        # leading "." is always correct.
+        print "." out
     }'
 }
 
