@@ -732,7 +732,6 @@ fi
 B0=$(sed -n '1p' "${LATFILT_MERGE}")
 B0_RPS=$(echo "$B0" | jq -r '.rps')
 B0_SUCC=$(echo "$B0" | jq -r '.successful_count')
-B0_RATE=$(echo "$B0" | jq -r '.success_rate')
 B0_200=$(echo "$B0" | jq -r '.code.hist["200"] // 0')
 B0_0=$(echo "$B0" | jq -r '.code.hist["0"] // 0')
 B0_P25=$(echo "$B0" | jq -r '.latency.p25')
@@ -741,7 +740,7 @@ B0_P99=$(echo "$B0" | jq -r '.latency.p99')
 
 [[ "${B0_RPS}" -eq 10 ]] || { echo "ERROR bucket0: rps expected 10, got ${B0_RPS} | ${B0}"; exit 1; }
 [[ "${B0_SUCC}" -eq 5 ]] || { echo "ERROR bucket0: successful_count expected 5, got ${B0_SUCC} | ${B0}"; exit 1; }
-[[ "${B0_RATE}" == "0.5000" ]] || { echo "ERROR bucket0: success_rate expected 0.5000, got ${B0_RATE} | ${B0}"; exit 1; }
+echo "$B0" | jq -e '.success_rate == 0.5' > /dev/null || { echo "ERROR bucket0: success_rate expected 0.5 | ${B0}"; exit 1; }
 [[ "${B0_200}" -eq 5 ]] || { echo "ERROR bucket0: code.hist[200] expected 5, got ${B0_200} | ${B0}"; exit 1; }
 [[ "${B0_0}" -eq 5 ]] || { echo "ERROR bucket0: code.hist[0] expected 5, got ${B0_0} | ${B0}"; exit 1; }
 # Critical: percentiles must be ≤50ms (the worst 200), NOT the 30s timeout
@@ -761,12 +760,11 @@ echo "  ✓ bucket 0 (mixed): rps=10, succ=5, rate=0.5, p99=${B0_P99}ns excludes
 B1=$(sed -n '2p' "${LATFILT_MERGE}")
 B1_RPS=$(echo "$B1" | jq -r '.rps')
 B1_SUCC=$(echo "$B1" | jq -r '.successful_count')
-B1_RATE=$(echo "$B1" | jq -r '.success_rate')
 B1_P50=$(echo "$B1" | jq -r '.latency.p50')
 
 [[ "${B1_RPS}" -eq 10 ]] || { echo "ERROR bucket1: rps expected 10, got ${B1_RPS}"; exit 1; }
 [[ "${B1_SUCC}" -eq 10 ]] || { echo "ERROR bucket1: successful_count expected 10, got ${B1_SUCC}"; exit 1; }
-[[ "${B1_RATE}" == "1.0000" ]] || { echo "ERROR bucket1: success_rate expected 1.0000, got ${B1_RATE}"; exit 1; }
+echo "$B1" | jq -e '.success_rate == 1' > /dev/null || { echo "ERROR bucket1: success_rate expected 1 | ${B1}"; exit 1; }
 [[ "${B1_P50}" -eq 5000000 ]] || { echo "ERROR bucket1: p50 expected 5000000ns, got ${B1_P50}"; exit 1; }
 echo "  ✓ bucket 1 (all success): rps=10, succ=10, rate=1.0, p50=5ms"
 
@@ -774,7 +772,6 @@ echo "  ✓ bucket 1 (all success): rps=10, succ=10, rate=1.0, p50=5ms"
 B2=$(sed -n '3p' "${LATFILT_MERGE}")
 B2_RPS=$(echo "$B2" | jq -r '.rps')
 B2_SUCC=$(echo "$B2" | jq -r '.successful_count')
-B2_RATE=$(echo "$B2" | jq -r '.success_rate')
 B2_0=$(echo "$B2" | jq -r '.code.hist["0"] // 0')
 B2_P25=$(echo "$B2" | jq -r '.latency.p25')
 B2_P50=$(echo "$B2" | jq -r '.latency.p50')
@@ -782,7 +779,7 @@ B2_P99=$(echo "$B2" | jq -r '.latency.p99')
 
 [[ "${B2_RPS}" -eq 10 ]] || { echo "ERROR bucket2: rps expected 10, got ${B2_RPS}"; exit 1; }
 [[ "${B2_SUCC}" -eq 0 ]] || { echo "ERROR bucket2: successful_count expected 0, got ${B2_SUCC}"; exit 1; }
-[[ "${B2_RATE}" == "0.0000" ]] || { echo "ERROR bucket2: success_rate expected 0.0000, got ${B2_RATE}"; exit 1; }
+echo "$B2" | jq -e '.success_rate == 0' > /dev/null || { echo "ERROR bucket2: success_rate expected 0 | ${B2}"; exit 1; }
 [[ "${B2_0}" -eq 10 ]] || { echo "ERROR bucket2: code.hist[0] expected 10, got ${B2_0}"; exit 1; }
 # All-failure edge case: latency must be {0,0,0}, JSON shape preserved, no crash
 [[ "${B2_P25}" -eq 0 ]] || { echo "ERROR bucket2: p25 expected 0, got ${B2_P25}"; exit 1; }
