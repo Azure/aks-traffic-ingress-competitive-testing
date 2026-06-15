@@ -30,7 +30,7 @@ cleanup() {
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
     rm -f "${MODULE_DIR}/statefile.bin" || true
-    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* /tmp/vegeta-test-latfilt-*.json /tmp/vegeta-test-allfam.json || true
+    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* /tmp/vegeta-test-latfilt-*.json /tmp/vegeta-test-allfam*.json || true
 }
 
 # Set trap to cleanup on exit
@@ -884,7 +884,26 @@ for code in 101 102 200 204 301 302 400 404 500 503; do
 done > "${ALLFAM_CSV}"
 
 vegeta encode --to gob < "${ALLFAM_CSV}" > "${ALLFAM_BIN}"
+
+# Run both paths (live: csv | gawk; merge: full merge.sh pipeline) and confirm
+# they produce identical output for this in-order input. The two paths share
+# aggregate.awk so equivalence is structurally guaranteed, but the diff catches
+# any future divergence (e.g. different pre-processing steps in merge.sh).
+ALLFAM_LIVE="/tmp/vegeta-test-allfam-live.json"
+rm -f "${ALLFAM_LIVE}"
+vegeta encode --to csv "${ALLFAM_BIN}" | \
+    gawk -f "${MODULE_DIR}/lib/aggregate.awk" > "${ALLFAM_LIVE}"
 "${MODULE_DIR}/merge/merge.sh" --output-file "${ALLFAM_OUT}" "${ALLFAM_BIN}"
+
+if ! diff -q "${ALLFAM_LIVE}" "${ALLFAM_OUT}" > /dev/null; then
+    echo "ERROR: All-family live and merge paths produced different output"
+    echo "--- live ---"
+    cat "${ALLFAM_LIVE}"
+    echo "--- merge ---"
+    cat "${ALLFAM_OUT}"
+    exit 1
+fi
+echo "  ✓ live and merge paths produce identical output"
 
 ALLFAM_LINES=$(wc -l < "${ALLFAM_OUT}")
 if [[ "${ALLFAM_LINES}" -ne 1 ]]; then
