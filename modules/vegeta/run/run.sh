@@ -3,7 +3,7 @@
 # Script to run Vegeta HTTP load testing attacks
 # https://github.com/tsenart/vegeta
 
-set -exo pipefail
+set -eo pipefail
 
 filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 statefile="${filepath}/../statefile.json"
