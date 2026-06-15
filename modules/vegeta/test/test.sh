@@ -30,7 +30,9 @@ cleanup() {
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
     rm -f "${MODULE_DIR}/statefile.bin" || true
-    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* /tmp/vegeta-test-latfilt-*.json /tmp/vegeta-test-allfam*.json || true
+    # All test artifacts use the /tmp/vegeta-test-* prefix. A single glob
+    # here means new tests don't have to remember to extend this list.
+    rm -f /tmp/vegeta-test-* || true
 }
 
 # Set trap to cleanup on exit
