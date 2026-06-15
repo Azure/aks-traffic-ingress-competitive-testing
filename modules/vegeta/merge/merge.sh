@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Script to merge multiple vegeta raw .bin files into jaggr-format per-second JSON output.
+# Script to merge multiple vegeta raw .bin files into per-second JSON output
+# matching the live runner's aggregate.awk schema.
 # Uses actual request timestamps for bucketing (not wall-clock time), so it works correctly
 # on saved/replayed data and correctly interleaves results from pods that started at
 # slightly different times.
@@ -10,10 +11,13 @@
 
 set -eo pipefail
 
+filepath=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
+aggregator="${filepath}/../lib/aggregate.awk"
+
 show_usage() {
     echo "Usage: $0 [--output-file FILE] <bin_file1> [bin_file2 ...]"
     echo ""
-    echo "Merges one or more raw vegeta .bin files into jaggr-format per-second JSON output."
+    echo "Merges one or more raw vegeta .bin files into per-second JSON output."
     echo ""
     echo "Options:"
     echo "  --output-file FILE   Write output to FILE (default: stdout)"
@@ -73,88 +77,12 @@ echo "Merging ${#bin_files[@]} .bin file(s)..." >&2
 # Pipeline:
 # 1. vegeta encode --to csv on all input files (vegeta round-robins through them)
 # 2. Sort by timestamp column (column 1, nanoseconds since epoch)
-# 3. gawk to bucket by second and compute per-bucket aggregates
+# 3. gawk (shared aggregate.awk) to bucket by second and compute per-bucket aggregates
 # 4. Output one JSON line per second-bucket
 merge_results() {
     vegeta encode --to csv "${bin_files[@]}" | \
     sort -t, -k1,1n | \
-    gawk -F, '
-    function floor_val(x) {
-        return int(x)
-    }
-    function flush_bucket() {
-        if (bucket_count == 0) return
-
-        # Compute latency percentiles
-        asort(latencies, sorted_lat)
-        n = bucket_count
-        p25_idx = floor_val(n * 0.25)
-        if (p25_idx < 1) p25_idx = 1
-        p50_idx = floor_val(n * 0.50)
-        if (p50_idx < 1) p50_idx = 1
-        p99_idx = floor_val(n * 0.99)
-        if (p99_idx < 1) p99_idx = 1
-
-        p25_val = sorted_lat[p25_idx]
-        p50_val = sorted_lat[p50_idx]
-        p99_val = sorted_lat[p99_idx]
-
-        # Build code histogram JSON
-        code_hist = ""
-        for (code in code_counts) {
-            if (code_hist != "") code_hist = code_hist ","
-            code_hist = code_hist "\"" code "\":" code_counts[code]
-        }
-
-        printf "{\"rps\":%d,\"code\":{\"hist\":{%s}},\"latency\":{\"p25\":%d,\"p50\":%d,\"p99\":%d},\"bytes_in\":{\"sum\":%d},\"bytes_out\":{\"sum\":%d}}\n", \
-            bucket_count, code_hist, p25_val, p50_val, p99_val, bytes_in_sum, bytes_out_sum
-    }
-
-    BEGIN {
-        current_second = -1
-        bucket_count = 0
-        bytes_in_sum = 0
-        bytes_out_sum = 0
-    }
-
-    {
-        # CSV columns: timestamp_ns, status_code, latency_ns, bytes_out, bytes_in, error
-        timestamp_ns = $1
-        status_code = $2
-        latency_ns = $3
-        bytes_out = $4
-        bytes_in = $5
-
-        # Bucket by second (integer division of nanoseconds by 1e9)
-        this_second = floor_val(timestamp_ns / 1000000000)
-
-        if (current_second == -1) {
-            current_second = this_second
-        }
-
-        if (this_second != current_second) {
-            flush_bucket()
-
-            # Reset for new bucket
-            current_second = this_second
-            bucket_count = 0
-            bytes_in_sum = 0
-            bytes_out_sum = 0
-            delete code_counts
-            delete latencies
-        }
-
-        bucket_count++
-        latencies[bucket_count] = latency_ns + 0
-        code_counts[status_code] += 1
-        bytes_in_sum += bytes_in + 0
-        bytes_out_sum += bytes_out + 0
-    }
-
-    END {
-        flush_bucket()
-    }
-    '
+    gawk -f "$aggregator"
 }
 
 if [[ -n "$output_file" ]]; then

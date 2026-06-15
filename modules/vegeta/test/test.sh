@@ -30,7 +30,9 @@ cleanup() {
     # Clean up any test state files
     rm -f "${MODULE_DIR}/statefile.json" || true
     rm -f "${MODULE_DIR}/statefile.bin" || true
-    rm -f /tmp/vegeta-test-*.bin /tmp/vegeta-test-*.csv /tmp/vegeta-test-merge-*.json /tmp/vegeta-test-synthetic* || true
+    # All test artifacts use the /tmp/vegeta-test-* prefix. A single glob
+    # here means new tests don't have to remember to extend this list.
+    rm -f /tmp/vegeta-test-* || true
 }
 
 # Set trap to cleanup on exit
@@ -70,7 +72,7 @@ echo "1. Testing Vegeta installation..."
 chmod +x "${MODULE_DIR}/install/install.sh"
 
 # Always run the install script to test the installation process
-echo "Running Vegeta and jaggr installation..."
+echo "Running Vegeta installation..."
 "${MODULE_DIR}/install/install.sh"
 
 # Verify Vegeta is installed
@@ -79,20 +81,11 @@ if ! command -v vegeta &> /dev/null; then
     exit 1
 fi
 
-# Verify jaggr is installed
-if ! command -v jaggr &> /dev/null; then
-    echo "ERROR: jaggr installation failed - jaggr command not found"
-    exit 1
-fi
-
 echo "✓ Vegeta installation test passed"
 
 echo "2. Testing Vegeta version..."
 VEGETA_VERSION=$(vegeta --version)
 echo "Vegeta version: ${VEGETA_VERSION}"
-
-JAGGR_VERSION=$(jaggr --version 2>&1 || echo "jaggr version unknown")
-echo "jaggr version: ${JAGGR_VERSION}"
 
 echo "✓ Version check test passed"
 
@@ -126,9 +119,9 @@ if [[ ! -s "${STATEFILE}" ]]; then
     exit 1
 fi
 
-# Check if state file contains jaggr output format
+# Check the state file contains the expected aggregator output format
 if ! grep -q "rps" "${STATEFILE}"; then
-    echo "ERROR: State file may not contain expected jaggr output format"
+    echo "ERROR: State file may not contain expected aggregator output format"
     echo "State file content:"
     cat "${STATEFILE}"
     exit 1
@@ -297,16 +290,26 @@ if [[ "${LINE_COUNT}" -lt 8 ]]; then
     exit 1
 fi
 
-# Check that each line's rps value is reasonable (roughly near 50, not collapsed or empty)
+# Check that each line's rps value is reasonable (roughly near 50, not collapsed or empty).
+# Skip the first and last lines since they may be partial edge buckets — the attack rarely
+# starts or stops exactly on a second boundary, so those buckets can legitimately be
+# significantly below 50 RPS without indicating a bucketing bug. Mirrors test #14.
+TOTAL_LINES=$(wc -l < "${STATEFILE}")
+LINE_NUM=0
 MIN_REASONABLE_RPS=38   # 0.75x the target rate
 MAX_REASONABLE_RPS=63   # 1.25x the target rate
 while IFS= read -r line; do
+    LINE_NUM=$((LINE_NUM + 1))
     RPS_VAL=$(echo "$line" | jq -r '.rps // 0')
     if [[ "${RPS_VAL}" -gt "${MAX_REASONABLE_RPS}" ]]; then
         echo "ERROR: RPS value ${RPS_VAL} is unreasonably high (expected near 50, max ${MAX_REASONABLE_RPS})"
         echo "This suggests results were collapsed instead of bucketed per-second"
         echo "Line: ${line}"
         exit 1
+    fi
+    # Skip RPS lower-bound check on first and last lines (partial edge buckets)
+    if [[ "${LINE_NUM}" -eq 1 ]] || [[ "${LINE_NUM}" -eq "${TOTAL_LINES}" ]]; then
+        continue
     fi
     if [[ "${RPS_VAL}" -lt "${MIN_REASONABLE_RPS}" ]]; then
         echo "ERROR: RPS value ${RPS_VAL} is unreasonably low (expected near 50, min ${MIN_REASONABLE_RPS})"
@@ -636,6 +639,314 @@ if [[ "${SYNTH_BYTES_IN}" -ne 1300 ]]; then
 fi
 
 echo "✓ Multi-pod merge latency percentile logic test passed"
+
+echo "17. Testing latency excludes status_code=0 (transport-failure) records..."
+# Synthetic CSV with a mix of code-200 successes and code-0 transport failures.
+# Vegeta uses status_code=0 for connection refused, EOF, timeout, etc. The
+# aggregator must exclude these from latency percentiles (since their "latency"
+# is failure-detection time, not service response time) while still counting
+# them in rps and code.hist.
+#
+# Bucket structure (3 second-buckets):
+#   bucket 0 (second 0): 5 successes (latencies 10..50ms) + 5 failures (30s timeouts)
+#                        → rps=10, successful_count=5, success_rate=0.5
+#                        → latency.p99 must reflect only the 200s (≤50ms),
+#                          NOT the 30s timeout
+#   bucket 1 (second 1): 10 successes only
+#                        → rps=10, successful_count=10, success_rate=1.0
+#   bucket 2 (second 2): 10 failures only
+#                        → rps=10, successful_count=0, success_rate=0.0
+#                        → latency must be {0,0,0} without crashing
+#
+# Both the live path (gawk -f aggregate.awk on unsorted CSV) and the merge path
+# (sort | gawk) must produce identical output for this in-order input.
+
+LATFILT_CSV="/tmp/vegeta-test-latfilt.csv"
+LATFILT_BIN="/tmp/vegeta-test-latfilt.bin"
+LATFILT_LIVE="/tmp/vegeta-test-latfilt-live.json"
+LATFILT_MERGE="/tmp/vegeta-test-latfilt-merge.json"
+rm -f "${LATFILT_CSV}" "${LATFILT_BIN}" "${LATFILT_LIVE}" "${LATFILT_MERGE}"
+
+BASE_TS=1700000000000000000
+TIMEOUT_NS=30000000000  # 30s — the kind of latency a code-0 timeout would carry
+SEQ=0
+
+# Bucket 0: 5 × 200 (latencies 10ms, 20ms, 30ms, 40ms, 50ms) + 5 × code-0 (30s)
+for i in 1 2 3 4 5; do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + i * 1000000))
+    LAT=$((i * 10000000))  # 10ms, 20ms, 30ms, 40ms, 50ms
+    echo "${TS},200,${LAT},0,13,,,,${SEQ},GET,http://localhost/,"
+done > "${LATFILT_CSV}"
+for i in 1 2 3 4 5; do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + (i + 5) * 1000000))
+    echo "${TS},0,${TIMEOUT_NS},0,0,connection refused,,,${SEQ},GET,http://localhost/,"
+done >> "${LATFILT_CSV}"
+
+# Bucket 1: 10 × 200 (latencies 5ms each)
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 1000000000 + i * 1000000))
+    echo "${TS},200,5000000,0,13,,,,${SEQ},GET,http://localhost/,"
+done >> "${LATFILT_CSV}"
+
+# Bucket 2: 10 × code-0 (30s timeouts)
+for i in $(seq 1 10); do
+    SEQ=$((SEQ + 1))
+    TS=$((BASE_TS + 2000000000 + i * 1000000))
+    echo "${TS},0,${TIMEOUT_NS},0,0,connection refused,,,${SEQ},GET,http://localhost/,"
+done >> "${LATFILT_CSV}"
+
+# Convert to vegeta binary
+vegeta encode --to gob < "${LATFILT_CSV}" > "${LATFILT_BIN}"
+if [[ ! -s "${LATFILT_BIN}" ]]; then
+    echo "ERROR: Failed to create synthetic .bin file for latency-filter test"
+    exit 1
+fi
+
+# Round-trip check: decoding the .bin back to CSV must yield the same row count
+# as the input CSV. Catches silent gob-encoding loss before downstream assertions.
+LATFILT_CSV_LINES=$(wc -l < "${LATFILT_CSV}")
+LATFILT_BIN_LINES=$(vegeta encode --to csv "${LATFILT_BIN}" | wc -l)
+if [[ "${LATFILT_CSV_LINES}" -ne "${LATFILT_BIN_LINES}" ]]; then
+    echo "ERROR: gob round-trip changed row count: input csv=${LATFILT_CSV_LINES}, decoded bin=${LATFILT_BIN_LINES}"
+    exit 1
+fi
+
+# Live path: vegeta encode --to csv | gawk -f aggregate.awk (no sort)
+vegeta encode --to csv "${LATFILT_BIN}" | \
+    gawk -f "${MODULE_DIR}/lib/aggregate.awk" > "${LATFILT_LIVE}"
+
+# Merge path: full merge.sh pipeline (sort | gawk)
+"${MODULE_DIR}/merge/merge.sh" --output-file "${LATFILT_MERGE}" "${LATFILT_BIN}"
+
+# Both paths must produce identical output for in-order input
+if ! diff -q "${LATFILT_LIVE}" "${LATFILT_MERGE}" > /dev/null; then
+    echo "ERROR: Live and merge paths produced different output"
+    echo "--- live ---"
+    cat "${LATFILT_LIVE}"
+    echo "--- merge ---"
+    cat "${LATFILT_MERGE}"
+    exit 1
+fi
+echo "  ✓ live and merge paths produce identical output"
+
+LATFILT_LINES=$(wc -l < "${LATFILT_MERGE}")
+if [[ "${LATFILT_LINES}" -ne 3 ]]; then
+    echo "ERROR: Expected 3 buckets, got ${LATFILT_LINES}"
+    cat "${LATFILT_MERGE}"
+    exit 1
+fi
+
+# --- Bucket 0: mixed (5 × 200 + 5 × code-0) ---
+B0=$(sed -n '1p' "${LATFILT_MERGE}")
+B0_RPS=$(echo "$B0" | jq -r '.rps')
+B0_RESP=$(echo "$B0" | jq -r '.responded_count')
+B0_SUCC=$(echo "$B0" | jq -r '.successful_count')
+B0_200=$(echo "$B0" | jq -r '.code.hist["200"] // 0')
+B0_0=$(echo "$B0" | jq -r '.code.hist["0"] // 0')
+B0_P25=$(echo "$B0" | jq -r '.latency.p25')
+B0_P50=$(echo "$B0" | jq -r '.latency.p50')
+B0_P99=$(echo "$B0" | jq -r '.latency.p99')
+
+[[ "${B0_RPS}" -eq 10 ]] || { echo "ERROR bucket0: rps expected 10, got ${B0_RPS} | ${B0}"; exit 1; }
+[[ "${B0_RESP}" -eq 5 ]] || { echo "ERROR bucket0: responded_count expected 5, got ${B0_RESP} | ${B0}"; exit 1; }
+[[ "${B0_SUCC}" -eq 5 ]] || { echo "ERROR bucket0: successful_count expected 5, got ${B0_SUCC} | ${B0}"; exit 1; }
+# response_rate = 5/10 = 0.5 (half of attempts got a response)
+echo "$B0" | jq -e '.response_rate == 0.5' > /dev/null || { echo "ERROR bucket0: response_rate expected 0.5 | ${B0}"; exit 1; }
+# success_rate = 5/5 = 1 (every response was 2xx)
+echo "$B0" | jq -e '.success_rate == 1' > /dev/null || { echo "ERROR bucket0: success_rate expected 1 | ${B0}"; exit 1; }
+[[ "${B0_200}" -eq 5 ]] || { echo "ERROR bucket0: code.hist[200] expected 5, got ${B0_200} | ${B0}"; exit 1; }
+[[ "${B0_0}" -eq 5 ]] || { echo "ERROR bucket0: code.hist[0] expected 5, got ${B0_0} | ${B0}"; exit 1; }
+# Critical: percentiles must be ≤50ms (the worst 200), NOT the 30s timeout
+if [[ "${B0_P99}" -gt 50000000 ]]; then
+    echo "ERROR bucket0: latency.p99=${B0_P99} > 50ms — code-0 records leaked into percentiles"
+    echo "$B0"
+    exit 1
+fi
+# Sanity: percentiles should be drawn from the 5 responded latencies {10,20,30,40,50}ms
+# n=5, p25_idx=floor(5*0.25)=1 → 10ms, p50_idx=2 → 20ms, p99_idx=4 → 40ms
+[[ "${B0_P25}" -eq 10000000 ]] || { echo "ERROR bucket0: p25 expected 10000000, got ${B0_P25}"; exit 1; }
+[[ "${B0_P50}" -eq 20000000 ]] || { echo "ERROR bucket0: p50 expected 20000000, got ${B0_P50}"; exit 1; }
+[[ "${B0_P99}" -eq 40000000 ]] || { echo "ERROR bucket0: p99 expected 40000000, got ${B0_P99}"; exit 1; }
+echo "  ✓ bucket 0 (mixed): rps=10, resp=5 (rate=0.5), succ=5 (rate=1.0), p99=${B0_P99}ns"
+
+# --- Bucket 1: all successes ---
+B1=$(sed -n '2p' "${LATFILT_MERGE}")
+B1_RPS=$(echo "$B1" | jq -r '.rps')
+B1_RESP=$(echo "$B1" | jq -r '.responded_count')
+B1_SUCC=$(echo "$B1" | jq -r '.successful_count')
+B1_P50=$(echo "$B1" | jq -r '.latency.p50')
+
+[[ "${B1_RPS}" -eq 10 ]] || { echo "ERROR bucket1: rps expected 10, got ${B1_RPS}"; exit 1; }
+[[ "${B1_RESP}" -eq 10 ]] || { echo "ERROR bucket1: responded_count expected 10, got ${B1_RESP}"; exit 1; }
+[[ "${B1_SUCC}" -eq 10 ]] || { echo "ERROR bucket1: successful_count expected 10, got ${B1_SUCC}"; exit 1; }
+echo "$B1" | jq -e '.response_rate == 1' > /dev/null || { echo "ERROR bucket1: response_rate expected 1 | ${B1}"; exit 1; }
+echo "$B1" | jq -e '.success_rate == 1' > /dev/null || { echo "ERROR bucket1: success_rate expected 1 | ${B1}"; exit 1; }
+[[ "${B1_P50}" -eq 5000000 ]] || { echo "ERROR bucket1: p50 expected 5000000ns, got ${B1_P50}"; exit 1; }
+echo "  ✓ bucket 1 (all success): rps=10, resp=10, succ=10, rate=1.0/1.0, p50=5ms"
+
+# --- Bucket 2: all transport failures ---
+B2=$(sed -n '3p' "${LATFILT_MERGE}")
+B2_RPS=$(echo "$B2" | jq -r '.rps')
+B2_RESP=$(echo "$B2" | jq -r '.responded_count')
+B2_SUCC=$(echo "$B2" | jq -r '.successful_count')
+B2_0=$(echo "$B2" | jq -r '.code.hist["0"] // 0')
+B2_P25=$(echo "$B2" | jq -r '.latency.p25')
+B2_P50=$(echo "$B2" | jq -r '.latency.p50')
+B2_P99=$(echo "$B2" | jq -r '.latency.p99')
+
+[[ "${B2_RPS}" -eq 10 ]] || { echo "ERROR bucket2: rps expected 10, got ${B2_RPS}"; exit 1; }
+[[ "${B2_RESP}" -eq 0 ]] || { echo "ERROR bucket2: responded_count expected 0, got ${B2_RESP}"; exit 1; }
+[[ "${B2_SUCC}" -eq 0 ]] || { echo "ERROR bucket2: successful_count expected 0, got ${B2_SUCC}"; exit 1; }
+echo "$B2" | jq -e '.response_rate == 0' > /dev/null || { echo "ERROR bucket2: response_rate expected 0 | ${B2}"; exit 1; }
+# success_rate is JSON null when responded_count is 0 (ratio is undefined).
+echo "$B2" | jq -e '.success_rate == null' > /dev/null || { echo "ERROR bucket2: success_rate expected null | ${B2}"; exit 1; }
+[[ "${B2_0}" -eq 10 ]] || { echo "ERROR bucket2: code.hist[0] expected 10, got ${B2_0}"; exit 1; }
+# All-failure edge case: latency must be {0,0,0}, JSON shape preserved, no crash
+[[ "${B2_P25}" -eq 0 ]] || { echo "ERROR bucket2: p25 expected 0, got ${B2_P25}"; exit 1; }
+[[ "${B2_P50}" -eq 0 ]] || { echo "ERROR bucket2: p50 expected 0, got ${B2_P50}"; exit 1; }
+[[ "${B2_P99}" -eq 0 ]] || { echo "ERROR bucket2: p99 expected 0, got ${B2_P99}"; exit 1; }
+echo "  ✓ bucket 2 (all transport failures): rps=10, resp=0, succ=0, rate=0/0, latency=0/0/0"
+
+# Schema invariants across all lines, plus code.family expectations:
+# - all six hundreds keys (0/100/200/300/400/500) always present
+# - sum(code.hist) == sum(code.family) == rps (both views describe the same records)
+# - successful_count ≤ responded_count ≤ rps (subset chain)
+# - success_rate is null exactly when responded_count is 0; otherwise a [0,1] float
+while IFS= read -r line; do
+    echo "$line" | jq -e '
+        (has("rps") and has("responded_count") and has("response_rate")
+         and has("successful_count") and has("success_rate")
+         and has("code") and has("latency") and has("bytes_in") and has("bytes_out"))
+        and (.code | has("hist") and has("family"))
+        and (.code.family | has("0") and has("100") and has("200") and has("300") and has("400") and has("500"))
+        and (.latency | has("p25") and has("p50") and has("p99"))
+        and (([.code.hist[]] | add) == .rps)
+        and (([.code.family[]] | add) == .rps)
+        and (.response_rate >= 0 and .response_rate <= 1)
+        and (
+          (.responded_count == 0 and .success_rate == null)
+          or (.responded_count > 0 and .success_rate >= 0 and .success_rate <= 1)
+        )
+        and (.successful_count <= .responded_count)
+        and (.responded_count <= .rps)
+    ' > /dev/null || { echo "ERROR: schema invariant failed on line: ${line}"; exit 1; }
+done < "${LATFILT_MERGE}"
+echo "  ✓ schema invariants hold (successful_count ≤ responded_count ≤ rps, sums match, success_rate null iff responded_count=0)"
+
+# Bucket-by-bucket family assertions: 200s land in family["200"], code-0s in family["0"],
+# unused families stay at 0.
+echo "$B0" | jq -e '.code.family == {"0":5,"100":0,"200":5,"300":0,"400":0,"500":0}' > /dev/null \
+    || { echo "ERROR bucket0: code.family mismatch | ${B0}"; exit 1; }
+echo "$B1" | jq -e '.code.family == {"0":0,"100":0,"200":10,"300":0,"400":0,"500":0}' > /dev/null \
+    || { echo "ERROR bucket1: code.family mismatch | ${B1}"; exit 1; }
+echo "$B2" | jq -e '.code.family == {"0":10,"100":0,"200":0,"300":0,"400":0,"500":0}' > /dev/null \
+    || { echo "ERROR bucket2: code.family mismatch | ${B2}"; exit 1; }
+echo "  ✓ code.family bins exact codes into hundreds families with stable key set"
+
+echo "✓ Latency-filter and success_rate test passed"
+
+echo "18. Testing code.family aggregates distinct codes within each family..."
+# Verify the binning logic actually groups distinct exact codes within the same
+# hundreds family (e.g. 101 AND 102 both land in family["100"]), and that the
+# strict-2xx successful_count rule treats 200 and 204 as successful but 301,
+# 400, 500 as not. Test #17's buckets only hit families "0" and "200"; this
+# test exercises 1xx/3xx/4xx/5xx with two distinct codes each.
+#
+# Single second-bucket (no code-0 records — covered in test #17 bucket 2):
+#   1xx:  101, 102           → family["100"] = 2
+#   2xx:  200, 204           → family["200"] = 2,  successful_count += 2
+#   3xx:  301, 302           → family["300"] = 2
+#   4xx:  400, 404           → family["400"] = 2
+#   5xx:  500, 503           → family["500"] = 2
+#   (no 0)                   → family["0"]   = 0
+#
+# Expected:
+#   rps              = 10
+#   responded_count  = 10  (all non-0)
+#   successful_count =  2  (only 200 and 204 are 2xx)
+#   response_rate    =  1
+#   success_rate     =  2/10 = 0.2
+
+ALLFAM_CSV="/tmp/vegeta-test-allfam.csv"
+ALLFAM_BIN="/tmp/vegeta-test-allfam.bin"
+ALLFAM_OUT="/tmp/vegeta-test-allfam.json"
+rm -f "${ALLFAM_CSV}" "${ALLFAM_BIN}" "${ALLFAM_OUT}"
+
+ALLFAM_BASE_TS=1700000000000000000
+ALLFAM_SEQ=0
+# Two distinct codes per non-zero family, all in the same second, all with
+# the same 5ms latency so p25/p50/p99 all equal 5ms.
+for code in 101 102 200 204 301 302 400 404 500 503; do
+    ALLFAM_SEQ=$((ALLFAM_SEQ + 1))
+    ts=$((ALLFAM_BASE_TS + ALLFAM_SEQ * 1000000))
+    echo "${ts},${code},5000000,0,13,,,,${ALLFAM_SEQ},GET,http://localhost/,"
+done > "${ALLFAM_CSV}"
+
+vegeta encode --to gob < "${ALLFAM_CSV}" > "${ALLFAM_BIN}"
+
+# Run both paths (live: csv | gawk; merge: full merge.sh pipeline) and confirm
+# they produce identical output for this in-order input. The two paths share
+# aggregate.awk so equivalence is structurally guaranteed, but the diff catches
+# any future divergence (e.g. different pre-processing steps in merge.sh).
+ALLFAM_LIVE="/tmp/vegeta-test-allfam-live.json"
+rm -f "${ALLFAM_LIVE}"
+vegeta encode --to csv "${ALLFAM_BIN}" | \
+    gawk -f "${MODULE_DIR}/lib/aggregate.awk" > "${ALLFAM_LIVE}"
+"${MODULE_DIR}/merge/merge.sh" --output-file "${ALLFAM_OUT}" "${ALLFAM_BIN}"
+
+if ! diff -q "${ALLFAM_LIVE}" "${ALLFAM_OUT}" > /dev/null; then
+    echo "ERROR: All-family live and merge paths produced different output"
+    echo "--- live ---"
+    cat "${ALLFAM_LIVE}"
+    echo "--- merge ---"
+    cat "${ALLFAM_OUT}"
+    exit 1
+fi
+echo "  ✓ live and merge paths produce identical output"
+
+ALLFAM_LINES=$(wc -l < "${ALLFAM_OUT}")
+if [[ "${ALLFAM_LINES}" -ne 1 ]]; then
+    echo "ERROR: Expected 1 second-bucket, got ${ALLFAM_LINES}"
+    cat "${ALLFAM_OUT}"
+    exit 1
+fi
+ALLFAM_LINE=$(cat "${ALLFAM_OUT}")
+
+# code.family must aggregate the two distinct codes per family into one bin each;
+# family["0"] is 0 because no code-0 records were sent.
+echo "${ALLFAM_LINE}" | jq -e \
+    '.code.family == {"0":0,"100":2,"200":2,"300":2,"400":2,"500":2}' > /dev/null \
+    || { echo "ERROR: code.family did not aggregate distinct codes | ${ALLFAM_LINE}"; exit 1; }
+echo "  ✓ code.family aggregates distinct codes (101+102 → 100:2, 200+204 → 200:2, …)"
+
+# code.hist preserves every distinct exact code with count 1.
+echo "${ALLFAM_LINE}" | jq -e \
+    '.code.hist == {"101":1,"102":1,"200":1,"204":1,"301":1,"302":1,"400":1,"404":1,"500":1,"503":1}' \
+    > /dev/null \
+    || { echo "ERROR: code.hist did not preserve all 10 distinct codes | ${ALLFAM_LINE}"; exit 1; }
+echo "  ✓ code.hist preserves all 10 distinct exact codes"
+
+# Counts: responded_count = all non-0 = 10; successful_count = strict 2xx (200, 204) = 2.
+echo "${ALLFAM_LINE}" | jq -e \
+    '.rps == 10 and .responded_count == 10 and .successful_count == 2' > /dev/null \
+    || { echo "ERROR: count mismatch | ${ALLFAM_LINE}"; exit 1; }
+echo "  ✓ rps=10, responded_count=10, successful_count=2 (200 and 204 only)"
+
+# Rates: response_rate = 10/10 = 1; success_rate = 2/10 = 0.2 (both exact in IEEE754).
+echo "${ALLFAM_LINE}" | jq -e '.response_rate == 1 and .success_rate == 0.2' > /dev/null \
+    || { echo "ERROR: rate mismatch | ${ALLFAM_LINE}"; exit 1; }
+echo "  ✓ response_rate=1.0, success_rate=0.2"
+
+# Sum invariants still hold across both views.
+echo "${ALLFAM_LINE}" | jq -e \
+    '(([.code.hist[]] | add) == .rps) and (([.code.family[]] | add) == .rps)' > /dev/null \
+    || { echo "ERROR: sum invariant failed | ${ALLFAM_LINE}"; exit 1; }
+echo "  ✓ sum(code.hist) == sum(code.family) == rps"
+
+echo "✓ All-family bin coverage test passed"
 
 echo ""
 echo "All Vegeta module tests passed!"

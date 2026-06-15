@@ -98,9 +98,21 @@ Scenarios accept CLI arguments (`--ingress-url`, `--rate`, `--duration`, `--work
 
 ### Data flow for results
 
-The vegeta run pipeline streams results in real time: `vegeta attack | tee statefile.bin | vegeta encode | jaggr | tee statefile.json`. This saves raw binary results to `.bin` alongside the per-second jaggr JSON. The scenario script then copies statefile.json content to the `--output-file`. The result file contains **one JSON line per second** of the test. The CI validation sums `code.hist["200"]` across **all lines** and fails only if the total is zero (i.e., no connection was ever successfully routed).
+The vegeta run pipeline streams results in real time:
 
-For multi-pod tests, `modules/vegeta/merge/merge.sh` combines multiple `.bin` files into unified per-second JSON. It uses actual request timestamps for bucketing (not wall-clock time), so it correctly interleaves results from pods that started at slightly different times. The first and last second-buckets may be partial.
+```
+vegeta attack | tee statefile.bin | vegeta encode --to csv | gawk -f modules/vegeta/lib/aggregate.awk | tee statefile.json
+```
+
+This saves raw binary results to `.bin` alongside the per-second JSON. The scenario script then copies statefile.json content to the `--output-file`. The result file contains **one JSON line per second** of the test, with shape:
+
+```json
+{"rps":N,"responded_count":R_n,"response_rate":R_r,"successful_count":M,"success_rate":S_r,"code":{"hist":{...exact codes...},"family":{"0":A,"100":B,"200":C,"300":D,"400":E,"500":F}},"latency":{"p25":x,"p50":y,"p99":z},"bytes_in":{"sum":...},"bytes_out":{"sum":...}}
+```
+
+Two count/rate pairs describe distinct phases of the request lifecycle: `responded_count` / `response_rate` is how many of the `rps` requests came back as a non-0 status (server actually responded), and `successful_count` / `success_rate` is how many of the responded records were 2xx (server accepted and fulfilled the request). Latency percentiles are computed over `responded_count` records — any non-0 status is a real measurement of server response time; vegeta uses `status_code=0` for transport-level failures whose "latency" is failure-detection time. `success_rate = successful_count / responded_count`, or JSON `null` when `responded_count` is `0` (the ratio is undefined — there were no responses to compute it over; treat as "no data this second" rather than "0% succeeded"). `code.hist` preserves the exact status codes seen this second (e.g. `"200":5,"503":2`); `code.family` aggregates the same counts into hundreds families (`0`, `100`, `200`, `300`, `400`, `500`) and always emits all six keys, so downstream plotters see a stable schema. `sum(code.hist[*]) == sum(code.family[*]) == rps` is an invariant. The CI validation sums `code.hist["200"]` across **all lines** and fails only if the total is zero (i.e., no connection was ever successfully routed).
+
+For multi-pod tests, `modules/vegeta/merge/merge.sh` combines multiple `.bin` files into unified per-second JSON. It shares the `modules/vegeta/lib/aggregate.awk` aggregator with the live runner, so live and merged outputs have identical schemas. The merge path sorts by timestamp before aggregating, so it correctly interleaves results from pods that started at slightly different times. The first and last second-buckets may be partial.
 
 ### Helm chart (charts/server)
 
